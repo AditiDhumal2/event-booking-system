@@ -1,4 +1,4 @@
-import { Schema, model, Document, Types } from 'mongoose';
+import { Schema, model, Document, Types, models } from "mongoose";
 
 export interface IEvent extends Document {
   title: string;
@@ -7,8 +7,8 @@ export interface IEvent extends Document {
   totalSeats: number;
   availableSeats: number;
   date: Date;
-  price: number;       // added
-  imageUrl: string;    // use imageUrl (not image)
+  price: number;
+  imageUrl: string;
   createdBy: Types.ObjectId;
   _id: Types.ObjectId;
 }
@@ -21,11 +21,13 @@ const EventSchema = new Schema<IEvent>(
     totalSeats: { type: Number, required: true },
     availableSeats: { type: Number, required: true },
     date: { type: Date, required: true },
-    price: { type: Number, required: true },      // added
-    imageUrl: { type: String, required: true },   // fixed naming
+    price: { type: Number, required: true },
+    imageUrl: { type: String, required: true },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
   },
   { timestamps: true }
 );
 
-export const Event = model<IEvent>("Event", EventSchema);
+// ✅ Use models.Event if it exists to prevent recompilation issues
+export const Event = models.Event || model<IEvent>("Event", EventSchema);
+export default Event;

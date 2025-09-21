@@ -1,20 +1,19 @@
 'use client';
 
+import { deleteEvent } from '@/actions/eventActions';
+
 interface DeleteButtonProps {
   eventId: string;
-  deleteAction: (eventId: string) => Promise<void>;
 }
 
-export default function DeleteButton({ eventId, deleteAction }: DeleteButtonProps) {
+export default function DeleteButton({ eventId }: DeleteButtonProps) {
   const handleClick = async () => {
-    if (!confirm('Are you sure you want to delete this event?')) {
-      return;
-    }
-    
+    if (!confirm('Are you sure you want to delete this event?')) return;
+
     try {
-      await deleteAction(eventId);
-      // Refresh the page after successful deletion
-      window.location.reload();
+      await deleteEvent(eventId);
+      alert('Event deleted successfully');
+      window.location.reload(); // Refresh page after deletion
     } catch (error) {
       console.error('Failed to delete event:', error);
       alert('Failed to delete event');
@@ -22,10 +21,7 @@ export default function DeleteButton({ eventId, deleteAction }: DeleteButtonProp
   };
 
   return (
-    <button 
-      onClick={handleClick}
-      className="text-red-600 hover:text-red-900"
-    >
+    <button onClick={handleClick} className="text-red-600 hover:text-red-900">
       Delete
     </button>
   );

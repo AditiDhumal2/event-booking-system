@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { formatDate, formatCurrency } from '@/lib/utils';
 
 interface Event {
@@ -9,7 +8,7 @@ interface Event {
   title: string;
   description: string;
   location: string;
-  date: string; // Changed from Date to string (ISO string)
+  date: string; // ISO string
   price: number;
   totalSeats: number;
   availableSeats: number;
@@ -26,18 +25,9 @@ interface EventCardProps {
 }
 
 export default function EventCard({ event }: EventCardProps) {
-  const router = useRouter();
   const isSoldOut = event.availableSeats === 0;
   const almostSoldOut = event.availableSeats > 0 && event.availableSeats <= 10;
 
-  const handleBookNow = (e: React.MouseEvent) => {
-    e.preventDefault();
-    if (!isSoldOut) {
-      router.push(`/events/${event._id}?book=true`);
-    }
-  };
-
-  // Parse the ISO string to Date object for formatting
   const eventDate = new Date(event.date);
 
   return (
@@ -114,6 +104,7 @@ export default function EventCard({ event }: EventCardProps) {
         )}
         
         <div className="flex space-x-3">
+          {/* View Details */}
           <Link
             href={`/events/${event._id}`}
             className="flex-1 text-center py-3 px-4 bg-gray-100 text-gray-700 rounded-lg font-semibold hover:bg-gray-200 transition-colors"
@@ -121,17 +112,22 @@ export default function EventCard({ event }: EventCardProps) {
             View Details
           </Link>
           
-          <button
-            onClick={handleBookNow}
-            className={`flex-1 text-center py-3 px-4 rounded-lg font-semibold transition-colors ${
-              isSoldOut
-                ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
-            }`}
-            disabled={isSoldOut}
-          >
-            {isSoldOut ? 'Sold Out' : 'Book Now'}
-          </button>
+          {/* Book Now */}
+          {isSoldOut ? (
+            <button
+              disabled
+              className="flex-1 text-center py-3 px-4 rounded-lg font-semibold bg-gray-400 text-gray-600 cursor-not-allowed"
+            >
+              Sold Out
+            </button>
+          ) : (
+            <Link
+              href={`/users/bookings/${event._id}`}
+              className="flex-1 text-center py-3 px-4 rounded-lg font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+            >
+              Book Now
+            </Link>
+          )}
         </div>
         
         {event.createdBy && (
