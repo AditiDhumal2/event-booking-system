@@ -1,130 +1,102 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { Booking, IBooking } from '@/models/Booking';
-import { Event, IEvent } from '@/models/Event';
+import { Booking } from '@/models/Booking';
+import { Event } from '@/models/Event';
 import dbConnect from '@/lib/mongoose';
 import { requireAuth } from '@/lib/auth';
 import { generateBookingCode } from '@/lib/utils';
 
-export async function bookTickets(eventId: string, tickets: number) {
-  const user = await requireAuth();
-  await dbConnect();
-
+// ========================
+// Create a booking (server action for form submission)
+// ========================
+export async function createBooking(eventId: string, formData: FormData) {
   try {
+    const user = await requireAuth();
+    await dbConnect();
+
+    // Parse tickets from form data
+    const tickets = parseInt(formData.get('tickets') as string, 10) || 1;
+
     const event = await Event.findById(eventId);
-    if (!event) {
-      return { error: 'Event not found' };
-    }
+    if (!event) return { success: false, error: 'Event not found' };
 
-    if (event.availableSeats < tickets) {
-      return { error: 'Not enough seats available' };
-    }
+    if (event.availableSeats < tickets)
+      return { success: false, error: 'Not enough seats available' };
 
-    // Start transaction
-    const session = await Booking.startSession();
-    session.startTransaction();
+    // Create booking
+    const booking = await Booking.create({
+      userId: user._id,
+      eventId: event._id,
+      tickets,
+      totalPrice: tickets * event.price,
+      bookingCode: generateBookingCode(),
+      status: 'confirmed',
+    });
 
-    try {
-      // Update event seats
-      event.availableSeats -= tickets;
-      await event.save({ session });
+    // Update event available seats
+    event.availableSeats -= tickets;
+    await event.save();
 
-      // Create booking
-      const totalPrice = event.price * tickets;
-      const bookingCode = generateBookingCode();
+    // Revalidate pages
+    revalidatePath('/user/bookings');
+    revalidatePath(`/events/${eventId}`);
 
-      const booking = new Booking({
-        eventId: event._id,
-        userId: (user._id as unknown as string).toString(),
-        tickets,
-        totalPrice,
-        bookingCode,
-        status: 'confirmed',
-      });
-
-      await booking.save({ session });
-
-      // Commit transaction
-      await session.commitTransaction();
-      session.endSession();
-
-      revalidatePath('/user/home');
-      revalidatePath(`/events/${eventId}`);
-
-      return {
-        success: true,
-        booking,
-        message: 'Tickets booked successfully!',
-      };
-    } catch (error) {
-      await session.abortTransaction();
-      session.endSession();
-      throw error;
-    }
-  } catch (error) {
-    console.error('Booking error:', error);
-    return { error: 'Booking failed. Please try again.' };
+    return { success: true, booking };
+  } catch (err: any) {
+    console.error('Booking error:', err);
+    return { success: false, error: err.message || 'Something went wrong' };
   }
 }
 
+// ========================
+// Cancel a booking (server action for form submission)
+// ========================
 export async function cancelBooking(bookingId: string) {
   const user = await requireAuth();
   await dbConnect();
 
   try {
     const booking = await Booking.findById(bookingId).populate('eventId');
-    if (!booking) {
-      return { error: 'Booking not found' };
-    }
+    if (!booking) return { success: false, error: 'Booking not found' };
 
     if (
-      booking.userId.toString() !== (user._id as unknown as string).toString() &&
+      booking.userId.toString() !== user._id.toString() &&
       user.role !== 'admin'
     ) {
-      return { error: 'Not authorized' };
+      return { success: false, error: 'Not authorized' };
     }
 
     const event = await Event.findById(booking.eventId);
-    if (!event) {
-      return { error: 'Event not found' };
-    }
+    if (!event) return { success: false, error: 'Event not found' };
 
     const hoursUntilEvent =
       (event.date.getTime() - new Date().getTime()) / (1000 * 60 * 60);
-    if (hoursUntilEvent < 24) {
-      return { error: 'Cancellation not allowed within 24 hours of event' };
-    }
+    if (hoursUntilEvent < 24)
+      return {
+        success: false,
+        error: 'Cancellation not allowed within 24 hours of event',
+      };
 
-    // Start transaction
-    const session = await Booking.startSession();
-    session.startTransaction();
+    booking.status = 'cancelled';
+    await booking.save();
 
-    try {
-      event.availableSeats += booking.tickets;
-      await event.save({ session });
+    event.availableSeats += booking.tickets;
+    await event.save();
 
-      booking.status = 'cancelled';
-      await booking.save({ session });
+    revalidatePath('/user/bookings');
+    revalidatePath(`/events/${event._id}`);
 
-      await session.commitTransaction();
-      session.endSession();
-
-      revalidatePath('/user/home');
-      revalidatePath(`/events/${event._id}`);
-
-      return { success: true, message: 'Booking cancelled successfully' };
-    } catch (error) {
-      await session.abortTransaction();
-      session.endSession();
-      throw error;
-    }
-  } catch (error) {
-    console.error('Cancellation error:', error);
-    return { error: 'Cancellation failed. Please try again.' };
+    return { success: true, message: 'Booking cancelled successfully' };
+  } catch (err: any) {
+    console.error('Cancellation error:', err);
+    return { success: false, error: err.message || 'Something went wrong' };
   }
 }
 
+// ========================
+// Get all bookings of current user
+// ========================
 export async function getUserBookings() {
   const user = await requireAuth();
   await dbConnect();
@@ -135,14 +107,19 @@ export async function getUserBookings() {
       .sort({ createdAt: -1 });
 
     return { success: true, bookings };
-  } catch (error) {
-    console.error('Bookings fetch error:', error);
-    return { error: 'Failed to fetch bookings' };
+  } catch (err: any) {
+    console.error('Bookings fetch error:', err);
+    return { success: false, error: err.message || 'Failed to fetch bookings' };
   }
 }
 
+// ========================
+// Get all bookings for a specific event (admin only)
+// ========================
 export async function getEventBookings(eventId: string) {
-  await requireAuth('admin');
+  const user = await requireAuth();
+  if (user.role !== 'admin')
+    return { success: false, error: 'Not authorized' };
   await dbConnect();
 
   try {
@@ -151,13 +128,15 @@ export async function getEventBookings(eventId: string) {
       .sort({ createdAt: -1 });
 
     return { success: true, bookings };
-  } catch (error) {
-    console.error('Event bookings fetch error:', error);
-    return { error: 'Failed to fetch event bookings' };
+  } catch (err: any) {
+    console.error('Event bookings fetch error:', err);
+    return { success: false, error: err.message || 'Failed to fetch event bookings' };
   }
 }
 
-// 🔥 NEW FUNCTION: Fetch single booking by ID
+// ========================
+// Get single booking by ID
+// ========================
 export async function getBookingById(bookingId: string) {
   const user = await requireAuth();
   await dbConnect();
@@ -167,21 +146,18 @@ export async function getBookingById(bookingId: string) {
       .populate('eventId')
       .populate('userId', 'name email');
 
-    if (!booking) {
-      return { error: 'Booking not found' };
-    }
+    if (!booking) return { success: false, error: 'Booking not found' };
 
-    // Ensure only the booking owner or admin can view
     if (
       booking.userId._id.toString() !== user._id.toString() &&
       user.role !== 'admin'
     ) {
-      return { error: 'Not authorized to view this booking' };
+      return { success: false, error: 'Not authorized to view this booking' };
     }
 
     return { success: true, booking };
-  } catch (error) {
-    console.error('Get booking by ID error:', error);
-    return { error: 'Failed to fetch booking' };
+  } catch (err: any) {
+    console.error('Get booking by ID error:', err);
+    return { success: false, error: err.message || 'Failed to fetch booking' };
   }
 }

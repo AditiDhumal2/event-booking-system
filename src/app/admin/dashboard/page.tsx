@@ -1,219 +1,166 @@
-import { redirect } from 'next/navigation';
-import { getToken } from '@/actions/authActions';
-import { getCurrentUser } from '@/lib/auth';
+'use client';
+
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { getEvents } from '@/actions/eventActions';
-import { User } from '@/models/User';
-import { Booking } from '@/models/Booking';
-import dbConnect from '@/lib/mongoose';
-import { formatDate } from '@/lib/utils';
 
-export default async function AdminDashboard() {
-  const token = await getToken();
-  if (!token) {
-    redirect('/auth/login');
-  }
+interface EventType {
+  _id: string;
+  title: string;
+  description: string;
+  location: string;
+  date: string;
+  totalSeats: number;
+  bookedSeats?: number;
+  price?: number;
+}
 
-  const userDoc = await getCurrentUser(token);
-  if (!userDoc) {
-    redirect('/auth/login');
-  }
+export default function DashboardPage() {
+  const [upcomingEvents, setUpcomingEvents] = useState<EventType[]>([]);
 
-  if (userDoc.role !== 'admin') {
-    redirect('/user/home');
-  }
+  useEffect(() => {
+    async function fetchEvents() {
+      try {
+        const result = await getEvents(); // fetch all events
+        if (result.success && result.events) {
+          const now = new Date();
+          const futureEvents: EventType[] = result.events
+            .map((e: any) => ({
+              ...e,
+              bookedSeats: e.bookedSeats || 0,
+              price: e.price || 0,
+              date: e.date
+            }))
+            .filter((e: EventType) => new Date(e.date) >= now);
 
-  await dbConnect();
-  
-  // Get stats
-  const totalEvents = await dbConnect().then(async () => {
-    const { Event } = await import('@/models/Event');
-    return Event.countDocuments();
-  });
+          setUpcomingEvents(futureEvents);
+        }
+      } catch (err) {
+        console.error('Error fetching events:', err);
+      }
+    }
 
-  const upcomingEvents = await dbConnect().then(async () => {
-    const { Event } = await import('@/models/Event');
-    return Event.countDocuments({ date: { $gte: new Date() } });
-  });
-
-  const pastEvents = await dbConnect().then(async () => {
-    const { Event } = await import('@/models/Event');
-    return Event.countDocuments({ date: { $lt: new Date() } });
-  });
-
-  const totalUsers = await dbConnect().then(async () => {
-    const { User } = await import('@/models/User');
-    return User.countDocuments({ role: 'user' });
-  });
-
-  const totalBookings = await dbConnect().then(async () => {
-    const { Booking } = await import('@/models/Booking');
-    return Booking.countDocuments();
-  });
-  
-  // Get recent events (✅ FIXED null safety)
-  const eventsResult = await getEvents({ date: { $gte: new Date() } });
-  const upcomingEventsList = eventsResult.success ? (eventsResult.events ?? []).slice(0, 5) : [];
+    fetchEvents();
+  }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-8">
-        <h1 className="text-3xl font-bold text-gray-800 mb-8">Admin Dashboard</h1>
+    <div>
+      {/* Welcome Banner */}
+      <div className="bg-white p-6 rounded-lg shadow mb-6">
+        <h2 className="text-2xl font-bold mb-2">Welcome back, Admin!</h2>
+        <p className="text-gray-600">Manage your event booking system</p>
+      </div>
 
-        {/* Welcome Message */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-8">
-          <h2 className="text-2xl font-semibold text-gray-800 mb-2">
-            Welcome back, {userDoc.name}!
-          </h2>
-          <p className="text-gray-600">Manage your event booking system</p>
-        </div>
-
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <div className="flex items-center">
-              <div className="p-3 bg-blue-100 rounded-lg">
-                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
-              <div className="ml-4">
-                <h2 className="text-2xl font-bold text-gray-800">{totalEvents}</h2>
-                <p className="text-gray-600">Total Events</p>
-              </div>
-            </div>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+        <div className="bg-white p-6 rounded-lg shadow flex items-center space-x-4">
+          <div className="w-12 h-12 flex items-center justify-center bg-blue-100 text-blue-600 rounded-lg text-xl">
+            📅
           </div>
-
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <div className="flex items-center">
-              <div className="p-3 bg-green-100 rounded-lg">
-                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-              </div>
-              <div className="ml-4">
-                <h2 className="text-2xl font-bold text-gray-800">{upcomingEvents}</h2>
-                <p className="text-gray-600">Upcoming Events</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <div className="flex items-center">
-              <div className="p-3 bg-purple-100 rounded-lg">
-                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
-              </div>
-              <div className="ml-4">
-                <h2 className="text-2xl font-bold text-gray-800">{totalUsers}</h2>
-                <p className="text-gray-600">Total Users</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <div className="flex items-center">
-              <div className="p-3 bg-yellow-100 rounded-lg">
-                <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
-                </svg>
-              </div>
-              <div className="ml-4">
-                <h2 className="text-2xl font-bold text-gray-800">{totalBookings}</h2>
-                <p className="text-gray-600">Total Bookings</p>
-              </div>
-            </div>
+          <div>
+            <h3 className="text-lg font-semibold">{upcomingEvents.length}</h3>
+            <p className="text-gray-600 text-sm">Upcoming Events</p>
           </div>
         </div>
+      </div>
 
-        {/* Quick Actions */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-8">
-          <h2 className="text-xl font-semibold text-gray-800 mb-4">Quick Actions</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <a href="/admin/events/new" className="p-4 bg-blue-100 rounded-lg hover:bg-blue-200 transition-colors text-center">
-              <div className="p-3 bg-blue-200 rounded-full inline-flex mb-2">
-                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-              </div>
-              <h3 className="font-semibold text-blue-800">Add New Event</h3>
-              <p className="text-sm text-blue-600">Create a new event</p>
-            </a>
+      {/* Quick Actions */}
+      <div className="bg-white p-6 rounded-lg shadow mb-6">
+        <h3 className="text-lg font-semibold mb-4">Quick Actions</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          <Link
+            href="/admin/events/new"
+            className="bg-blue-100 p-6 rounded-lg text-center hover:bg-blue-200 cursor-pointer"
+          >
+            <p className="text-xl mb-2">➕</p>
+            <h4 className="font-semibold">Add New Event</h4>
+            <p className="text-gray-600 text-sm">Create a new event</p>
+          </Link>
 
-            <a href="/admin/events" className="p-4 bg-green-100 rounded-lg hover:bg-green-200 transition-colors text-center">
-              <div className="p-3 bg-green-200 rounded-full inline-flex mb-2">
-                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-              </div>
-              <h3 className="font-semibold text-green-800">Manage Events</h3>
-              <p className="text-sm text-green-600">Edit existing events</p>
-            </a>
+          <Link
+            href="/admin/events"
+            className="bg-green-100 p-6 rounded-lg text-center hover:bg-green-200 cursor-pointer"
+          >
+            <p className="text-xl mb-2">✏️</p>
+            <h4 className="font-semibold">Manage Events</h4>
+            <p className="text-gray-600 text-sm">Edit existing events</p>
+          </Link>
 
-            <a href="/admin/users" className="p-4 bg-purple-100 rounded-lg hover:bg-purple-200 transition-colors text-center">
-              <div className="p-3 bg-purple-200 rounded-full inline-flex mb-2">
-                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
-              </div>
-              <h3 className="font-semibold text-purple-800">View Users</h3>
-              <p className="text-sm text-purple-600">See all registered users</p>
-            </a>
-          </div>
+          <Link
+            href="/admin/users"
+            className="bg-purple-100 p-6 rounded-lg text-center hover:bg-purple-200 cursor-pointer"
+          >
+            <p className="text-xl mb-2">👥</p>
+            <h4 className="font-semibold">View Users</h4>
+            <p className="text-gray-600 text-sm">See all registered users</p>
+          </Link>
+        </div>
+      </div>
+
+      {/* Upcoming Events Table */}
+      <div className="bg-white p-6 rounded-lg shadow">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold">Upcoming Events</h3>
+          <Link href="/admin/events" className="text-blue-600 hover:underline text-sm">
+            View All Events →
+          </Link>
         </div>
 
-        {/* Upcoming Events */}
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-gray-800">Upcoming Events</h2>
-            <a href="/admin/events" className="text-blue-600 hover:text-blue-800 text-sm">
-              View All Events →
-            </a>
-          </div>
-          {upcomingEventsList.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Event</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Available Seats</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {upcomingEventsList.map((event: any) => (
-                    <tr key={String(event._id)}>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{event.title}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {formatDate(event.date)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {event.location}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {event.availableSeats} / {event.totalSeats}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <a href={`/admin/events/${String(event._id)}/edit`} className="text-blue-600 hover:text-blue-900 mr-3">
-                          Edit
-                        </a>
-                        <a href={`/admin/events/${String(event._id)}/bookings`} className="text-green-600 hover:text-green-900">
-                          View Bookings
-                        </a>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="text-gray-500">No upcoming events</p>
-          )}
-        </div>
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="border-b">
+              <th className="py-2 px-4">Event</th>
+              <th className="py-2 px-4">Date</th>
+              <th className="py-2 px-4">Location</th>
+              <th className="py-2 px-4">Available Seats</th>
+              <th className="py-2 px-4">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {upcomingEvents.map(event => {
+              const eventDate = new Date(event.date).toLocaleString('en-GB', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              });
+
+              return (
+                <tr key={event._id} className="border-b hover:bg-gray-50 transition-colors">
+                  <td className="py-2 px-4">{event.title}</td>
+                  <td className="py-2 px-4">{eventDate}</td>
+                  <td className="py-2 px-4">{event.location}</td>
+                  <td className="py-2 px-4">
+                    {event.totalSeats - (event.bookedSeats || 0)} / {event.totalSeats}
+                  </td>
+                  <td className="py-2 px-4 flex space-x-2">
+                    <Link
+                      href={`/admin/events/${event._id}/edit`}
+                      className="px-3 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 transition-colors"
+                    >
+                      Edit
+                    </Link>
+                    <Link
+                      href={`/admin/events/${event._id}`}
+                      className="px-3 py-1 bg-green-100 text-green-600 rounded hover:bg-green-200 transition-colors"
+                    >
+                      View Bookings
+                    </Link>
+                  </td>
+                </tr>
+              );
+            })}
+
+            {upcomingEvents.length === 0 && (
+              <tr>
+                <td colSpan={5} className="py-4 px-4 text-center text-gray-500">
+                  No upcoming events found.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );

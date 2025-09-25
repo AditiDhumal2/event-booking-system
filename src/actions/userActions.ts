@@ -2,13 +2,36 @@
 
 import { revalidatePath } from 'next/cache';
 import dbConnect from '@/lib/mongoose';
-import { generateToken } from '@/lib/auth';
+import { generateToken } from '@/lib/jwt';
 import { setToken } from './authActions';
+import { getToken } from './authActions';
+import { getCurrentUser } from '@/lib/auth';
 
 async function getUserModel() {
   await dbConnect();
   const { User } = await import('@/models/User');
   return User;
+}
+
+// ------------------ GET CURRENT USER DATA ------------------
+export async function getCurrentUserData() {
+  try {
+    const token = await getToken();
+    if (!token) return null;
+    
+    const user = await getCurrentUser(token);
+    if (!user) return null;
+    
+    return {
+      _id: user._id.toString(),
+      name: user.name,
+      email: user.email,
+      role: user.role
+    };
+  } catch (error) {
+    console.error('Error getting current user data:', error);
+    return null;
+  }
 }
 
 // ------------------ REGISTER USER ------------------
@@ -66,10 +89,16 @@ export async function loginUser(prevState: any, formData: FormData) {
     const token = generateToken(user);
     await setToken(token);
 
-    // ✅ Role-based redirect
+    // Return user data along with redirect
     return {
       success: true,
-      redirectTo: user.role === 'admin' ? '/admin/dashboard' : '/user/home'
+      redirectTo: '/user/home', // Always redirect to user homepage
+      user: {
+        _id: user._id.toString(),
+        name: user.name,
+        email: user.email,
+        role: user.role
+      }
     };
   } catch (error) {
     console.error('Login error:', error);
@@ -148,5 +177,102 @@ export async function changePassword(prevState: any, formData: FormData) {
   } catch (error) {
     console.error('Password change error:', error);
     return { error: 'Password change failed' };
+  }
+}
+
+// ===== ADMIN ACTIONS =====
+export type UserType = {
+  _id: string;
+  name: string;
+  email: string;
+  role: string;
+};
+
+export async function getAllUsers(): Promise<{ success: true; users: UserType[] } | { success: false; error: string }> {
+  try {
+    await dbConnect();
+    const { User } = await import('@/models/User');
+    const users = await User.find({});
+    return {
+      success: true,
+      users: users.map(u => ({
+        _id: u._id.toString(),
+        name: u.name,
+        email: u.email,
+        role: u.role,
+      })),
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to fetch users' };
+  }
+}
+
+export async function makeUserAdmin(userId: string): Promise<{ success: true; message: string } | { success: false; error: string }> {
+  try {
+    await dbConnect();
+    const { User } = await import('@/models/User');
+    const user = await User.findById(userId);
+    if (!user) return { success: false, error: 'User not found' };
+    user.role = 'admin';
+    await user.save();
+    return { success: true, message: 'User promoted to admin' };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to make user admin' };
+  }
+}
+
+// ===== EVENT ACTIONS =====
+export type EventType = {
+  _id: string;
+  title: string;
+  description: string;
+  location: string;
+  totalSeats: number;
+  availableSeats: number;
+  date: Date;
+};
+
+export async function getAllEvents(): Promise<{ success: true; events: EventType[] } | { success: false; error: string }> {
+  try {
+    await dbConnect();
+    const { Event } = await import('@/models/Event');
+    const events = await Event.find({});
+    return {
+      success: true,
+      events: events.map(e => ({
+        _id: e._id.toString(),
+        title: e.title,
+        description: e.description,
+        location: (e as any).location,
+        totalSeats: (e as any).totalSeats,
+        availableSeats: (e as any).availableSeats,
+        date: e.date,
+      })),
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to fetch events' };
+  }
+}
+
+export async function addEvent(eventData: Omit<EventType, '_id'>): Promise<{ success: true; message: string } | { success: false; error: string }> {
+  try {
+    await dbConnect();
+    const { Event } = await import('@/models/Event');
+    const event = new Event(eventData);
+    await event.save();
+    return { success: true, message: 'Event added successfully' };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to add event' };
+  }
+}
+
+export async function deleteEvent(eventId: string): Promise<{ success: true; message: string } | { success: false; error: string }> {
+  try {
+    await dbConnect();
+    const { Event } = await import('@/models/Event');
+    await Event.findByIdAndDelete(eventId);
+    return { success: true, message: 'Event deleted successfully' };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to delete event' };
   }
 }

@@ -2,7 +2,6 @@
 
 import { useState, useEffect, FormEvent } from 'react';
 import Link from 'next/link';
-import { useActionState } from 'react';
 import { useRouter } from 'next/navigation';
 import PasswordInput from '@/components/shared/PasswordInput';
 import { loginUser } from '@/actions/userActions';
@@ -11,6 +10,7 @@ interface LoginState {
   success?: boolean;
   error?: string;
   redirectTo?: string;
+  user?: any;
 }
 
 export default function LoginPage() {
@@ -29,7 +29,12 @@ export default function LoginPage() {
     setState(result);
 
     if (result.success && result.redirectTo) {
+      // Store user data in localStorage for the Header component
+      if (result.user) {
+        localStorage.setItem('user', JSON.stringify(result.user));
+      }
       router.replace(result.redirectTo);
+      router.refresh(); // Refresh the page to update the Header
     }
 
     setIsLoading(false);

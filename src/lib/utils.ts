@@ -40,6 +40,14 @@ export function formatDate(date: Date): string {
   }
 }
 
+// ✅ Newly added
+export function formatTime(date: Date): string {
+  return new Date(date).toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',

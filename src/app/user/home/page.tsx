@@ -1,4 +1,3 @@
-// app/user/home/page.tsx
 import { redirect } from 'next/navigation';
 import { getEvents } from '@/actions/eventActions';
 import { getToken } from '@/actions/authActions';
@@ -19,10 +18,6 @@ export default async function UserHomePage({ searchParams }: PageProps) {
   const userDoc = await getCurrentUser(token);
   if (!userDoc) {
     redirect('/auth/login');
-  }
-
-  if (userDoc.role === 'admin') {
-    redirect('/admin/dashboard');
   }
 
   // Await the searchParams promise

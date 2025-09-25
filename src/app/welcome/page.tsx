@@ -1,21 +1,86 @@
-// app/welcome/page.tsx
 import Link from 'next/link';
 import { getEvents } from '@/actions/eventActions';
-import EventCard from '@/components/ui/EventCard';
+import Image from 'next/image';
+import { formatDate } from '@/lib/utils';
+
+interface Event {
+  _id: string;
+  title: string;
+  description: string;
+  location: string;
+  totalSeats: number;
+  availableSeats: number;
+  date: string | Date;
+  image?: string;
+  price?: number;
+}
+
+// Guest EventCard: links always go to /auth/login
+function GuestEventCard({ event }: { event: Event }) {
+  const imageUrl = event.image || `https://picsum.photos/400/300?random=${event._id}`;
+
+  return (
+    <div className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
+      <div className="relative w-full h-64">
+        <Image
+          src={imageUrl}
+          alt={event.title}
+          fill
+          className="object-cover"
+          priority
+        />
+      </div>
+
+      <div className="p-6">
+        <h3 className="text-xl font-semibold text-gray-800 mb-2 line-clamp-2">{event.title}</h3>
+        <p className="text-gray-600 mb-4 line-clamp-3">{event.description}</p>
+
+        <div className="space-y-2 mb-4 text-gray-600 text-sm">
+          <p>Date: {formatDate(new Date(event.date))}</p>
+          <p>Location: {event.location}</p>
+          <p>Price: ₹{event.price}</p>
+          <p>{event.availableSeats} seats available</p>
+        </div>
+
+        <div className="flex space-x-3">
+          <Link
+            href="/auth/login"
+            className="flex-1 bg-blue-600 text-white py-2 px-4 rounded text-center hover:bg-blue-700 transition-colors"
+          >
+            View Details
+          </Link>
+          {event.availableSeats > 0 ? (
+            <Link
+              href="/auth/login"
+              className="flex-1 bg-green-600 text-white py-2 px-4 rounded text-center hover:bg-green-700 transition-colors"
+            >
+              Book Now
+            </Link>
+          ) : (
+            <button
+              disabled
+              className="flex-1 bg-gray-400 text-white py-2 px-4 rounded cursor-not-allowed"
+            >
+              Sold Out
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default async function WelcomePage() {
-  // Get some featured events for the welcome page
+  // Fetch featured events
   const eventsResult = await getEvents({});
-  
-  // Safe handling of potentially undefined events
-  const featuredEvents = eventsResult.success && eventsResult.events 
-    ? eventsResult.events.slice(0, 3) 
+  const featuredEvents = eventsResult.success && eventsResult.events
+    ? eventsResult.events.slice(0, 3)
     : [];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      {/* Hero Section */}
       <div className="container mx-auto px-4 py-16">
+        {/* Hero Section */}
         <div className="text-center mb-16">
           <h1 className="text-5xl font-bold text-gray-800 mb-6">Welcome to EventBook</h1>
           <p className="text-xl text-gray-600 max-w-2xl mx-auto mb-10">
@@ -29,13 +94,13 @@ export default async function WelcomePage() {
           </Link>
         </div>
 
-        {/* Featured Events Section */}
+        {/* Featured Events */}
         {featuredEvents.length > 0 ? (
           <div className="mb-16">
             <h2 className="text-3xl font-bold text-gray-800 text-center mb-12">Featured Events</h2>
             <div className="grid md:grid-cols-3 gap-8">
-              {featuredEvents.map((event) => (
-                <EventCard key={event._id} event={event} />
+              {featuredEvents.map(event => (
+                <GuestEventCard key={event._id} event={event} />
               ))}
             </div>
           </div>
@@ -103,7 +168,7 @@ export default async function WelcomePage() {
               <li>Receive confirmation and enjoy the event!</li>
             </ol>
           </div>
-          
+
           <div className="bg-white p-6 rounded-2xl shadow-lg">
             <h3 className="text-xl font-semibold mb-4">Why Choose EventBook?</h3>
             <ul className="space-y-2 text-gray-600">
