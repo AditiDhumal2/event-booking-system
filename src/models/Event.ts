@@ -1,6 +1,7 @@
 import { Schema, model, Document, Types, models } from "mongoose";
 
 export interface IEvent extends Document {
+  _id: Types.ObjectId;
   title: string;
   description: string;
   location: string;
@@ -8,9 +9,10 @@ export interface IEvent extends Document {
   availableSeats: number;
   date: Date;
   price: number;
-  imageUrl: string;
+  imageUrls: string[];
   createdBy: Types.ObjectId;
-  _id: Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const EventSchema = new Schema<IEvent>(
@@ -22,12 +24,11 @@ const EventSchema = new Schema<IEvent>(
     availableSeats: { type: Number, required: true },
     date: { type: Date, required: true },
     price: { type: Number, required: true },
-    imageUrl: { type: String, required: true },
+    imageUrls: { type: [String], required: true },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
   },
   { timestamps: true }
 );
 
-// ✅ Use models.Event if it exists to prevent recompilation issues
 export const Event = models.Event || model<IEvent>("Event", EventSchema);
 export default Event;

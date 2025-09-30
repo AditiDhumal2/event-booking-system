@@ -1,84 +1,152 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { getEventById } from '@/actions/eventActions'; // make sure this exists
 import Link from 'next/link';
+import Image from 'next/image';
+import { formatDate } from '@/lib/utils';
 
-interface EventType {
+interface Event {
   _id: string;
   title: string;
   description: string;
   location: string;
-  date: string;
+  totalSeats: number;
+  availableSeats: number;
+  date: string | Date;
+  imageUrls: string[];
   price?: number;
-  totalSeats?: number;
-  bookedSeats?: number;
-  image?: string;
 }
 
-export default function EventDetail() {
-  const searchParams = useSearchParams();
-  const eventId = searchParams.get('id');
+interface EventCardProps {
+  event: Event;
+}
 
-  const [event, setEvent] = useState<EventType | null>(null);
-
-  useEffect(() => {
-    async function fetchEvent() {
-      if (!eventId) return;
-      const result = await getEventById(eventId);
-      if (result.success && result.event) {
-        setEvent(result.event); // safe
-      } else {
-        setEvent(null);
-      }
-    }
-    fetchEvent();
-  }, [eventId]);
-
-  if (!event) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-gray-600 text-lg">Loading event details...</p>
-      </div>
-    );
-  }
-
-  const eventDate = new Date(event.date).toLocaleString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+export default function EventCard({ event }: EventCardProps) {
+  // Only use uploaded images - no fallback to random images
+  const hasImages = event.imageUrls && event.imageUrls.length > 0;
+  const imageUrl = hasImages ? event.imageUrls[0] : null;
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-md overflow-hidden">
-        <img
-          src={event.image || 'https://images.unsplash.com/photo-1535223289827-42f1e9919769'}
-          alt={event.title}
-          className="w-full h-64 object-cover"
-        />
-        <div className="p-6 space-y-4">
-          <h1 className="text-3xl font-bold text-gray-800">{event.title}</h1>
-          <p className="text-gray-600">{event.description}</p>
-          <div className="flex justify-between text-gray-700 font-semibold">
-            <p>Date: {eventDate}</p>
-            <p>Location: {event.location}</p>
+    <div className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-xl transition-shadow duration-300 flex flex-col">
+      {/* Image Section */}
+      <div className="relative w-full h-56">
+        {imageUrl ? (
+          <Image
+            src={imageUrl}
+            alt={event.title}
+            fill
+            className="object-cover"
+            priority={true}
+          />
+        ) : (
+          <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+            <span className="text-gray-500 text-sm">No Image</span>
           </div>
-          {event.price && <p className="text-gray-700 font-semibold">Price: ₹{event.price}</p>}
-          {event.totalSeats !== undefined && (
-            <p className="text-gray-700">
-              Seats Available: {event.totalSeats - (event.bookedSeats || 0)} / {event.totalSeats}
-            </p>
+        )}
+        
+        <div className="absolute top-3 right-3 bg-white/90 px-3 py-1 rounded-full text-xs font-semibold text-gray-800 shadow-sm">
+          {event.availableSeats > 0 ? `${event.availableSeats} Left` : 'Sold Out'}
+        </div>
+        
+        {/* Multiple Images Badge */}
+        {hasImages && event.imageUrls.length > 1 && (
+          <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded-full text-xs font-semibold">
+            +{event.imageUrls.length - 1} more
+          </div>
+        )}
+      </div>
+
+      {/* Event Info */}
+      <div className="p-5 flex flex-col flex-grow">
+        <h3 className="text-lg font-bold text-gray-900 mb-1 line-clamp-2">
+          {event.title}
+        </h3>
+        <p className="text-sm text-gray-600 mb-3 line-clamp-2">
+          {event.description}
+        </p>
+
+        <div className="space-y-2 text-sm text-gray-700 mb-4">
+          {/* Location */}
+          <div className="flex items-center">
+            <svg
+              className="w-4 h-4 mr-2 text-gray-500"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.243-4.243a8 8 0 1111.314 0z"
+              />
+            </svg>
+            <span>{event.location}</span>
+          </div>
+
+          {/* Date */}
+          <div className="flex items-center">
+            <svg
+              className="w-4 h-4 mr-2 text-gray-500"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
+            </svg>
+            <span>{formatDate(new Date(event.date))}</span>
+          </div>
+
+          {/* Price */}
+          {event.price && (
+            <div className="flex items-center">
+              <svg
+                className="w-4 h-4 mr-2 text-gray-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"
+                />
+              </svg>
+              <span>
+                ₹{new Intl.NumberFormat('en-IN').format(event.price)} per ticket
+              </span>
+            </div>
           )}
+        </div>
+
+        {/* Action Buttons */}
+        <div className="mt-auto flex space-x-3">
           <Link
-            href={`/book/${event._id}`}
-            className="block text-center bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 transition-colors"
+            href={`/events/${event._id}`}
+            className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg text-center text-sm font-medium hover:bg-blue-700 transition-colors"
           >
-            Book Now
+            View Details
           </Link>
+          {event.availableSeats > 0 ? (
+            <Link
+              href={`/events/${event._id}/book`}
+              className="flex-1 bg-green-600 text-white py-2 px-4 rounded-lg text-center text-sm font-medium hover:bg-green-700 transition-colors"
+            >
+              Book Now
+            </Link>
+          ) : (
+            <button
+              disabled
+              className="flex-1 bg-gray-400 text-white py-2 px-4 rounded-lg text-center text-sm font-medium cursor-not-allowed"
+            >
+              Sold Out
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -5,32 +5,44 @@ import { getCurrentUser } from '@/lib/auth';
 import { getUserBookings, cancelBooking } from '@/actions/bookingActions';
 import Link from 'next/link';
 
-interface PageProps {
-  searchParams?: { [key: string]: string | string[] | undefined };
-}
-
-export default async function UserBookingsPage({ searchParams }: PageProps) {
-  const token = await getToken();
-  if (!token) {
-    redirect('/auth/login');
-  }
-
-  const userDoc = await getCurrentUser(token);
-  if (!userDoc) {
-    redirect('/auth/login');
-  }
-
-  const bookingSuccess = searchParams?.booking === 'success';
-  const bookingsResult = await getUserBookings();
-
+// Create a separate client component for the searchParams part
+function BookingsContent({ 
+  bookingSuccess, 
+  bookingsResult 
+}: { 
+  bookingSuccess: boolean;
+  bookingsResult: any;
+}) {
   const getBookingData = (booking: any) => {
+    // If booking is already sanitized (plain object), use it directly
+    if (booking && !booking.toObject) {
+      return {
+        _id: booking._id?.toString() || '',
+        userId: booking.userId?.toString() || '',
+        eventId: {
+          _id: booking.eventId?._id?.toString() || booking.eventId?.toString() || '',
+          title: booking.eventId?.title || 'Unknown Event',
+          date: booking.eventId?.date ? new Date(booking.eventId.date) : new Date(),
+          location: booking.eventId?.location || 'Unknown Location',
+          price: booking.eventId?.price || 0
+        },
+        tickets: booking.tickets || 0,
+        totalPrice: booking.totalPrice || 0,
+        bookingCode: booking.bookingCode || '',
+        status: booking.status || 'pending',
+        createdAt: booking.createdAt ? new Date(booking.createdAt) : new Date(),
+        updatedAt: booking.updatedAt ? new Date(booking.updatedAt) : new Date()
+      };
+    }
+
+    // If it's a MongoDB document, convert to plain object
     const plainBooking = booking.toObject ? booking.toObject() : booking;
 
     return {
       _id: plainBooking._id?.toString() || '',
       userId: plainBooking.userId?.toString() || '',
       eventId: {
-        _id: plainBooking.eventId?._id?.toString() || '',
+        _id: plainBooking.eventId?._id?.toString() || plainBooking.eventId?.toString() || '',
         title: plainBooking.eventId?.title || 'Unknown Event',
         date: plainBooking.eventId?.date ? new Date(plainBooking.eventId.date) : new Date(),
         location: plainBooking.eventId?.location || 'Unknown Location',
@@ -159,5 +171,35 @@ export default async function UserBookingsPage({ searchParams }: PageProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+// Main page component - properly handles searchParams
+export default async function UserBookingsPage({ 
+  searchParams 
+}: { 
+  searchParams: Promise<{ booking?: string }> 
+}) {
+  const token = await getToken();
+  if (!token) {
+    redirect('/auth/login');
+  }
+
+  const userDoc = await getCurrentUser(token);
+  if (!userDoc) {
+    redirect('/auth/login');
+  }
+
+  // Properly await searchParams
+  const resolvedSearchParams = await searchParams;
+  const bookingSuccess = resolvedSearchParams?.booking === 'success';
+  
+  const bookingsResult = await getUserBookings();
+
+  return (
+    <BookingsContent 
+      bookingSuccess={bookingSuccess} 
+      bookingsResult={bookingsResult} 
+    />
   );
 }

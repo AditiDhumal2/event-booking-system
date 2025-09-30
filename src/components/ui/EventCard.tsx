@@ -12,7 +12,7 @@ interface Event {
   totalSeats: number;
   availableSeats: number;
   date: string | Date;
-  image?: string;
+  imageUrls: string[];
   price?: number;
 }
 
@@ -21,20 +21,49 @@ interface EventCardProps {
 }
 
 export default function EventCard({ event }: EventCardProps) {
-  const imageUrl =
-    event.image || `https://picsum.photos/400/300?random=${event._id}`;
+  // Ensure imageUrls is always an array and get the first image
+  const imageUrls = Array.isArray(event.imageUrls) ? event.imageUrls : [];
+  const hasImages = imageUrls.length > 0;
+  const firstImageUrl = hasImages ? imageUrls[0] : null;
 
   return (
     <div className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-xl transition-shadow duration-300 flex flex-col">
       {/* Image Section */}
-      <div className="relative w-full h-56">
-        <Image
-          src={imageUrl}
-          alt={event.title}
-          fill
-          className="object-cover"
-          priority={true}
-        />
+      <div className="relative w-full h-56 bg-gray-100">
+        {firstImageUrl ? (
+          <>
+            <Image
+              src={firstImageUrl}
+              alt={event.title}
+              fill
+              className="object-cover"
+              priority={false}
+              onError={(e) => {
+                console.error('❌ Image failed to load:', firstImageUrl);
+                const target = e.target as HTMLImageElement;
+                target.style.display = 'none';
+                // Show placeholder when image fails to load
+                const placeholder = document.createElement('div');
+                placeholder.className = 'w-full h-full bg-gray-200 flex items-center justify-center';
+                placeholder.innerHTML = '<span class="text-gray-500 text-sm">Image not available</span>';
+                target.parentNode?.appendChild(placeholder);
+              }}
+            />
+            
+            {/* Multiple Images Badge */}
+            {imageUrls.length > 1 && (
+              <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded-full text-xs font-semibold">
+                +{imageUrls.length - 1} more
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <span className="text-gray-500 text-sm">No image available</span>
+          </div>
+        )}
+        
+        {/* Available Seats Badge */}
         <div className="absolute top-3 right-3 bg-white/90 px-3 py-1 rounded-full text-xs font-semibold text-gray-800 shadow-sm">
           {event.availableSeats > 0 ? `${event.availableSeats} Left` : 'Sold Out'}
         </div>

@@ -5,6 +5,8 @@ import dbConnect from '@/lib/mongoose';
 import { requireAuth } from '@/lib/auth';
 import type { IEvent } from '@/models/Event';
 import { Types } from 'mongoose';
+import { writeFile, mkdir } from 'fs/promises';
+import path from 'path';
 
 // Define interfaces for type safety
 interface EventPlain {
@@ -16,7 +18,7 @@ interface EventPlain {
   price: number;
   totalSeats: number;
   availableSeats: number;
-  imageUrl: string;
+  imageUrls: string[];
   createdBy: {
     _id: string;
     name: string;
@@ -41,7 +43,6 @@ interface Booking {
 async function getEventModel() {
   await dbConnect();
   try {
-    // Import the Event model using named import
     const { Event } = await import('@/models/Event');
     return Event;
   } catch (error) {
@@ -53,7 +54,6 @@ async function getEventModel() {
 async function getUserModel() {
   await dbConnect();
   try {
-    // Import the User model using named import
     const { User } = await import('@/models/User');
     return User;
   } catch (error) {
@@ -65,7 +65,6 @@ async function getUserModel() {
 async function getBookingModel() {
   await dbConnect();
   try {
-    // Import the Booking model using named import
     const { Booking } = await import('@/models/Booking');
     return Booking;
   } catch (error) {
@@ -93,7 +92,7 @@ function convertAggregationEventToPlain(event: any): EventPlain {
     price: event.price || 0,
     totalSeats: event.totalSeats || 0,
     availableSeats: event.availableSeats || 0,
-    imageUrl: event.imageUrl || '',
+    imageUrls: event.imageUrls || [], // Only use uploaded images, no fallback
     createdBy: {
       _id: event.createdBy?._id?.toString() || '',
       name: event.createdBy?.name || 'Unknown',
@@ -115,6 +114,55 @@ function assertEventDocument(doc: any): asserts doc is IEvent & {
   }
 }
 
+// File upload helper function
+async function uploadImages(files: File[]): Promise<string[]> {
+  const imageUrls: string[] = [];
+  
+  for (const file of files) {
+    try {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        throw new Error(`File ${file.name} is not an image`);
+      }
+      
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        throw new Error(`File ${file.name} is too large. Maximum size is 5MB`);
+      }
+      
+      // Convert file to buffer
+      const bytes = await file.arrayBuffer();
+      const buffer = Buffer.from(bytes);
+      
+      // Create unique filename
+      const timestamp = Date.now();
+      const randomString = Math.random().toString(36).substring(2, 8);
+      const fileExtension = path.extname(file.name) || '.jpg';
+      const filename = `event-${timestamp}-${randomString}${fileExtension}`;
+      
+      // Ensure public/events directory exists
+      const eventsDir = path.join(process.cwd(), 'public', 'events');
+      await mkdir(eventsDir, { recursive: true });
+      
+      // Write file to public/events directory
+      const filePath = path.join(eventsDir, filename);
+      await writeFile(filePath, buffer);
+      
+      // The URL should be relative to the public folder
+      const imageUrl = `/events/${filename}`;
+      imageUrls.push(imageUrl);
+      
+      console.log(`✅ Image saved: ${imageUrl}`);
+      
+    } catch (error) {
+      console.error(`❌ Failed to upload ${file.name}:`, error);
+      throw error;
+    }
+  }
+  
+  return imageUrls;
+}
+
 export async function createEvent(formData: FormData) {
   const user = await requireAuth();
   const Event = await getEventModel();
@@ -125,9 +173,43 @@ export async function createEvent(formData: FormData) {
   const date = formData.get('date') as string;
   const price = parseFloat(formData.get('price') as string);
   const totalSeats = parseInt(formData.get('totalSeats') as string);
-  const imageUrl = formData.get('imageUrl') as string;
+  
+  console.log('📝 Creating event with data:', {
+    title,
+    location,
+    date,
+    price,
+    totalSeats
+  });
   
   try {
+    // Handle file uploads
+    const imageFiles: File[] = [];
+    
+    // Get all files from FormData
+    const images = formData.getAll('images');
+    console.log('📁 Received files from FormData:', images.length);
+    
+    for (const image of images) {
+      if (image instanceof File && image.size > 0 && image.name) {
+        console.log('📄 File details:', {
+          name: image.name,
+          size: image.size,
+          type: image.type
+        });
+        imageFiles.push(image);
+      }
+    }
+    
+    if (imageFiles.length === 0) {
+      console.log('❌ No valid image files found');
+      return { success: false, error: 'At least one image is required' };
+    }
+    
+    console.log('🖼️ Processing', imageFiles.length, 'image files');
+    const imageUrls = await uploadImages(imageFiles);
+    console.log('✅ Uploaded images URLs:', imageUrls);
+    
     const event = new Event({
       title,
       description,
@@ -136,19 +218,23 @@ export async function createEvent(formData: FormData) {
       price,
       totalSeats,
       availableSeats: totalSeats,
-      imageUrl,
+      imageUrls, // Store only uploaded images
       createdBy: user._id
     });
     
     await event.save();
+    console.log('💾 Event saved to database with images:', imageUrls);
+    
     revalidatePath('/admin/events');
+    revalidatePath('/user/home');
+    revalidatePath('/');
     
     // Convert to plain object
     const plainEvent = convertAggregationEventToPlain(event);
     return { success: true, event: plainEvent };
   } catch (error) {
-    console.error('Event creation error:', error);
-    return { success: false, error: 'Event creation failed' };
+    console.error('❌ Event creation error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Event creation failed' };
   }
 }
 
@@ -162,7 +248,8 @@ export async function updateEvent(eventId: string, formData: FormData) {
   const date = formData.get('date') as string;
   const price = parseFloat(formData.get('price') as string);
   const totalSeats = parseInt(formData.get('totalSeats') as string);
-  const imageUrl = formData.get('imageUrl') as string;
+  
+  console.log('📝 Updating event:', eventId);
   
   try {
     const event = await Event.findById(eventId);
@@ -172,6 +259,39 @@ export async function updateEvent(eventId: string, formData: FormData) {
     
     // Use type assertion to tell TypeScript about the document properties
     assertEventDocument(event);
+    
+    // Handle existing images
+    const existingImages = formData.getAll('existingImages') as string[];
+    let imageUrls = existingImages || [];
+
+    // Handle file uploads if new images are provided
+    const imageFiles: File[] = [];
+    const images = formData.getAll('images') as File[];
+    
+    console.log('📁 Received files for update:', images.length);
+    
+    for (const image of images) {
+      if (image instanceof File && image.size > 0 && image.name) {
+        console.log('📄 File details:', {
+          name: image.name,
+          size: image.size,
+          type: image.type
+        });
+        imageFiles.push(image);
+      }
+    }
+    
+    if (imageFiles.length > 0) {
+      console.log('🖼️ Processing', imageFiles.length, 'new image files');
+      const newImageUrls = await uploadImages(imageFiles);
+      imageUrls = [...imageUrls, ...newImageUrls];
+      console.log('✅ Updated images URLs:', imageUrls);
+    }
+
+    // If no images remain, return error
+    if (imageUrls.length === 0) {
+      return { success: false, error: 'At least one image is required' };
+    }
     
     // Calculate new available seats if total seats changed
     const seatsDifference = totalSeats - event.totalSeats;
@@ -187,7 +307,7 @@ export async function updateEvent(eventId: string, formData: FormData) {
         price,
         totalSeats,
         availableSeats: newAvailableSeats > 0 ? newAvailableSeats : 0,
-        imageUrl
+        imageUrls // Store only uploaded images
       },
       { new: true }
     );
@@ -198,13 +318,17 @@ export async function updateEvent(eventId: string, formData: FormData) {
     
     revalidatePath('/admin/events');
     revalidatePath(`/events/${eventId}`);
+    revalidatePath('/user/home');
+    revalidatePath('/');
+    
+    console.log('✅ Event updated successfully');
     
     // Convert to plain object
     const plainEvent = convertAggregationEventToPlain(updatedEvent);
     return { success: true, event: plainEvent };
   } catch (error) {
-    console.error('Event update error:', error);
-    return { success: false, error: 'Event update failed' };
+    console.error('❌ Event update error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Event update failed' };
   }
 }
 
@@ -212,12 +336,17 @@ export async function deleteEvent(eventId: string) {
   await requireAuth();
   const Event = await getEventModel();
   
+  console.log('🗑️ Deleting event:', eventId);
+  
   try {
     await Event.findByIdAndDelete(eventId);
     revalidatePath('/admin/events');
+    revalidatePath('/user/home');
+    revalidatePath('/');
+    console.log('✅ Event deleted successfully');
     return { success: true };
   } catch (error) {
-    console.error('Event deletion error:', error);
+    console.error('❌ Event deletion error:', error);
     return { success: false, error: 'Event deletion failed' };
   }
 }
@@ -253,7 +382,7 @@ export async function getEvents(filters = {}): Promise<{ success: boolean; event
           price: 1,
           totalSeats: 1,
           availableSeats: 1,
-          imageUrl: 1,
+          imageUrls: 1,
           createdAt: 1,
           updatedAt: 1,
           'createdBy._id': '$creator._id',
@@ -264,6 +393,7 @@ export async function getEvents(filters = {}): Promise<{ success: boolean; event
     ]);
     
     if (!events || events.length === 0) {
+      console.log('ℹ️ No events found with filters:', filters);
       return { success: true, events: [] };
     }
     
@@ -277,7 +407,7 @@ export async function getEvents(filters = {}): Promise<{ success: boolean; event
       price: event.price || 0,
       totalSeats: event.totalSeats || 0,
       availableSeats: event.availableSeats || 0,
-      imageUrl: event.imageUrl || '',
+      imageUrls: event.imageUrls || [], // Only uploaded images, no fallback
       createdBy: {
         _id: event.createdBy?._id?.toString() || '',
         name: event.createdBy?.name || 'Unknown',
@@ -287,15 +417,18 @@ export async function getEvents(filters = {}): Promise<{ success: boolean; event
       updatedAt: safeToISOString(event.updatedAt)
     }));
     
+    console.log(`✅ Fetched ${plainEvents.length} events`);
     return { success: true, events: plainEvents };
   } catch (error) {
-    console.error('Events fetch error:', error);
+    console.error('❌ Events fetch error:', error);
     return { success: false, error: 'Failed to fetch events' };
   }
 }
 
 export async function getEventById(eventId: string): Promise<{ success: boolean; event?: EventPlain; error?: string }> {
   const Event = await getEventModel();
+  
+  console.log('🔍 Fetching event by ID:', eventId);
   
   try {
     // Use aggregation instead of populate for single event
@@ -324,7 +457,7 @@ export async function getEventById(eventId: string): Promise<{ success: boolean;
           price: 1,
           totalSeats: 1,
           availableSeats: 1,
-          imageUrl: 1,
+          imageUrls: 1,
           createdAt: 1,
           updatedAt: 1,
           'createdBy._id': '$creator._id',
@@ -335,6 +468,7 @@ export async function getEventById(eventId: string): Promise<{ success: boolean;
     ]);
     
     if (!events || events.length === 0) {
+      console.log('❌ Event not found:', eventId);
       return { success: false, error: 'Event not found' };
     }
     
@@ -350,7 +484,7 @@ export async function getEventById(eventId: string): Promise<{ success: boolean;
       price: event.price || 0,
       totalSeats: event.totalSeats || 0,
       availableSeats: event.availableSeats || 0,
-      imageUrl: event.imageUrl || '',
+      imageUrls: event.imageUrls || [], // Only uploaded images, no fallback
       createdBy: {
         _id: event.createdBy?._id?.toString() || '',
         name: event.createdBy?.name || 'Unknown',
@@ -360,15 +494,23 @@ export async function getEventById(eventId: string): Promise<{ success: boolean;
       updatedAt: safeToISOString(event.updatedAt)
     };
     
+    console.log('✅ Event fetched successfully:', {
+      id: plainEvent._id,
+      title: plainEvent.title,
+      imageCount: plainEvent.imageUrls.length
+    });
+    
     return { success: true, event: plainEvent };
   } catch (error) {
-    console.error('Event fetch error:', error);
+    console.error('❌ Event fetch error:', error);
     return { success: false, error: 'Failed to fetch event' };
   }
 }
 
 export async function getFeaturedEvents(): Promise<{ success: boolean; events?: EventPlain[]; error?: string }> {
   const Event = await getEventModel();
+  
+  console.log('⭐ Fetching featured events');
   
   try {
     // Use aggregation instead of populate for featured events
@@ -399,7 +541,7 @@ export async function getFeaturedEvents(): Promise<{ success: boolean; events?: 
           price: 1,
           totalSeats: 1,
           availableSeats: 1,
-          imageUrl: 1,
+          imageUrls: 1,
           createdAt: 1,
           updatedAt: 1,
           'createdBy._id': '$creator._id',
@@ -410,6 +552,7 @@ export async function getFeaturedEvents(): Promise<{ success: boolean; events?: 
     ]);
     
     if (!events || events.length === 0) {
+      console.log('ℹ️ No featured events found');
       return { success: true, events: [] };
     }
     
@@ -423,7 +566,7 @@ export async function getFeaturedEvents(): Promise<{ success: boolean; events?: 
       price: event.price || 0,
       totalSeats: event.totalSeats || 0,
       availableSeats: event.availableSeats || 0,
-      imageUrl: event.imageUrl || '',
+      imageUrls: event.imageUrls || [], // Only uploaded images, no fallback
       createdBy: {
         _id: event.createdBy?._id?.toString() || '',
         name: event.createdBy?.name || 'Unknown',
@@ -433,9 +576,10 @@ export async function getFeaturedEvents(): Promise<{ success: boolean; events?: 
       updatedAt: safeToISOString(event.updatedAt)
     }));
     
+    console.log(`✅ Fetched ${plainEvents.length} featured events`);
     return { success: true, events: plainEvents };
   } catch (error) {
-    console.error('Featured events fetch error:', error);
+    console.error('❌ Featured events fetch error:', error);
     return { success: false, error: 'Failed to fetch featured events' };
   }
 }
@@ -448,6 +592,8 @@ export async function getEvent(eventId: string): Promise<{ success: boolean; eve
 
 export async function getEventBookings(eventId: string): Promise<{ success: boolean; bookings?: Booking[]; error?: string }> {
   const Booking = await getBookingModel();
+  
+  console.log('📊 Fetching bookings for event:', eventId);
   
   try {
     // Use aggregation to get bookings with user information
@@ -483,6 +629,7 @@ export async function getEventBookings(eventId: string): Promise<{ success: bool
     ]);
     
     if (!bookings || bookings.length === 0) {
+      console.log('ℹ️ No bookings found for event:', eventId);
       return { success: true, bookings: [] };
     }
     
@@ -498,9 +645,10 @@ export async function getEventBookings(eventId: string): Promise<{ success: bool
       createdAt: safeToISOString(booking.createdAt)
     }));
     
+    console.log(`✅ Fetched ${plainBookings.length} bookings for event`);
     return { success: true, bookings: plainBookings };
   } catch (error) {
-    console.error('Bookings fetch error:', error);
+    console.error('❌ Bookings fetch error:', error);
     return { success: false, error: 'Failed to fetch bookings' };
   }
 }

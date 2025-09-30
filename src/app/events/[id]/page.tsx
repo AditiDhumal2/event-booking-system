@@ -4,6 +4,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { getEventById } from '@/actions/eventActions';
 import Link from 'next/link';
 import { formatDate } from '@/lib/utils';
+import Image from 'next/image';
 
 interface EventPageProps {
   params: Promise<{ id: string }>;
@@ -42,10 +43,10 @@ export default async function EventPage({ params }: EventPageProps) {
           <h1 className="text-2xl font-bold text-red-600 mb-4">Event Not Found</h1>
           <p className="text-gray-600 mb-4">The event you're looking for doesn't exist or has been removed.</p>
           <Link 
-            href="/user" 
+            href="/user/home" 
             className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
           >
-            Back to Events
+            Back to Homepage
           </Link>
         </div>
       </div>
@@ -53,47 +54,92 @@ export default async function EventPage({ params }: EventPageProps) {
   }
 
   const event = eventResult.event;
+  const imageUrls = Array.isArray(event.imageUrls) ? event.imageUrls : [];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 py-8">
-      <div className="container mx-auto px-4 max-w-4xl">
+      <div className="container mx-auto px-4 max-w-6xl">
         {/* Back Button */}
         <div className="mb-6">
           <Link 
-            href="/user"
+            href="/user/home"
             className="inline-flex items-center text-blue-600 hover:text-blue-800"
           >
             <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
-            Back to All Events
+            Back to Homepage
           </Link>
         </div>
 
-        {/* Event Header */}
+        {/* Event Header and Image Gallery */}
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden mb-8">
+          {/* Image Gallery Section */}
+          {imageUrls.length > 0 ? (
+            <div className="p-6 border-b">
+              <h2 className="text-xl font-semibold text-gray-800 mb-4">Event Gallery ({imageUrls.length} images)</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {imageUrls.map((imageUrl: string, index: number) => (
+                  <div key={index} className="relative group">
+                    <div className="relative h-64 w-full overflow-hidden rounded-lg bg-gray-100">
+                      <Image
+                        src={imageUrl}
+                        alt={`${event.title} - Image ${index + 1}`}
+                        fill
+                        className="object-cover group-hover:scale-105 transition-transform duration-300"
+                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                      />
+                    </div>
+                    <div className="absolute top-2 right-2 bg-black bg-opacity-60 text-white px-2 py-1 rounded-md text-xs">
+                      Image {index + 1}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="p-6 border-b bg-gray-50">
+              <div className="text-center py-8">
+                <div className="text-gray-400 text-sm mb-2">No images available for this event</div>
+                <div className="relative h-48 w-full max-w-md mx-auto bg-gray-200 rounded-lg flex items-center justify-center">
+                  <span className="text-gray-500">No Event Images</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Event Details */}
           <div className="p-8">
             <div className="flex items-start justify-between mb-6">
-              <div>
+              <div className="flex-1">
                 <h1 className="text-4xl font-bold text-gray-800 mb-2">{event.title}</h1>
                 <p className="text-xl text-gray-600">{event.description}</p>
               </div>
               
-              {event.availableSeats > 0 ? (
-                <Link
-                  href={`/events/${event._id}/book`}
-                  className="bg-green-600 text-white px-8 py-3 rounded-lg text-lg font-semibold hover:bg-green-700 transition-colors"
-                >
-                  Book Now
-                </Link>
-              ) : (
-                <button
-                  disabled
-                  className="bg-gray-400 text-white px-8 py-3 rounded-lg text-lg font-semibold cursor-not-allowed"
-                >
-                  Sold Out
-                </button>
-              )}
+              <div className="ml-6">
+                {event.availableSeats > 0 ? (
+                  <Link
+                    href={`/events/${event._id}/book`}
+                    className="bg-green-600 text-white px-8 py-3 rounded-lg text-lg font-semibold hover:bg-green-700 transition-colors block text-center"
+                  >
+                    Book Now
+                  </Link>
+                ) : (
+                  <button
+                    disabled
+                    className="bg-gray-400 text-white px-8 py-3 rounded-lg text-lg font-semibold cursor-not-allowed"
+                  >
+                    Sold Out
+                  </button>
+                )}
+                <div className="mt-2 text-center">
+                  <span className={`text-sm font-medium ${
+                    event.availableSeats > 0 ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {event.availableSeats > 0 ? `${event.availableSeats} seats available` : 'Fully booked'}
+                  </span>
+                </div>
+              </div>
             </div>
 
             {/* Event Details Grid */}
@@ -120,7 +166,7 @@ export default async function EventPage({ params }: EventPageProps) {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
                   </svg>
                   <span className="font-medium">Price:</span>
-                  <span className="ml-2">${event.price} per ticket</span>
+                  <span className="ml-2">₹{event.price.toLocaleString('en-IN')} per ticket</span>
                 </div>
               </div>
 
@@ -159,30 +205,33 @@ export default async function EventPage({ params }: EventPageProps) {
 
             {/* Additional Information */}
             <div className="bg-gray-50 rounded-lg p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-3">Additional Information</h3>
+              <h3 className="text-lg font-semibold text-gray-800 mb-3">Event Information</h3>
               <div className="space-y-2 text-sm text-gray-600">
                 <p>• Please arrive 30 minutes before the event starts</p>
                 <p>• Bring your booking confirmation and ID</p>
                 <p>• Seating is on a first-come, first-served basis</p>
                 <p>• Cancellations are allowed up to 24 hours before the event</p>
+                {event.availableSeats < 10 && event.availableSeats > 0 && (
+                  <p className="text-orange-600 font-medium">• Only {event.availableSeats} seats left! Book soon to secure your spot.</p>
+                )}
               </div>
             </div>
           </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex space-x-4 justify-center">
+        <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4 justify-center">
           <Link
-            href="/user"
-            className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+            href="/user/home"
+            className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors text-center"
           >
-            Browse More Events
+            Back to Homepage
           </Link>
           
           {event.availableSeats > 0 && (
             <Link
               href={`/events/${event._id}/book`}
-              className="bg-green-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors"
+              className="bg-green-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors text-center"
             >
               Book Tickets Now
             </Link>

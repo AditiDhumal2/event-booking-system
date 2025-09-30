@@ -6,7 +6,14 @@ import PreventBackNavigation from '@/components/ui/PreventBackNavigation';
 import { getToken } from '@/actions/authActions';
 import { getCurrentUser } from '@/lib/auth';
 
-const inter = Inter({ subsets: ['latin'] });
+// Configure Inter font with better error handling and fallbacks
+const inter = Inter({
+  subsets: ['latin'],
+  display: 'swap',
+  adjustFontFallback: true,
+  preload: true,
+  fallback: ['system-ui', 'arial'],
+});
 
 export const metadata: Metadata = {
   title: 'EventBook - Book Your Events',

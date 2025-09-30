@@ -158,6 +158,15 @@ export default function Header() {
                       User Homepage
                     </Link>
 
+                    {/* My Bookings Link - Available for both admin and regular users */}
+                    <Link
+                      href="/user/bookings"
+                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                      onClick={() => setIsProfileDropdownOpen(false)}
+                    >
+                      My Bookings
+                    </Link>
+
                     {user.role === "admin" && (
                       <Link
                         href="/admin/dashboard"

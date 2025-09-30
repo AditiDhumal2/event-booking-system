@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { getEventById } from '@/actions/eventActions';
 
 interface PageProps {
@@ -8,7 +9,6 @@ interface PageProps {
 }
 
 export default async function EventDetailPage({ params }: PageProps) {
-  // Unwrap the params promise
   const { id } = await params;
   
   const result = await getEventById(id);
@@ -30,9 +30,10 @@ export default async function EventDetailPage({ params }: PageProps) {
   }
 
   const event = result.event!;
+  const imageUrls = Array.isArray(event.imageUrls) ? event.imageUrls : [];
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
+    <div className="max-w-6xl mx-auto p-6">
       <div className="mb-6">
         <Link 
           href="/admin/events"
@@ -53,6 +54,7 @@ export default async function EventDetailPage({ params }: PageProps) {
           </div>
           
           <div className="flex space-x-2">
+            {/* View Bookings Button */}
             <Link
               href={`/admin/events/${event._id}/bookings`}
               className="bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-md transition-colors"
@@ -64,13 +66,39 @@ export default async function EventDetailPage({ params }: PageProps) {
       </div>
 
       <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        {event.imageUrl && (
-          <div className="h-64 w-full overflow-hidden">
-            <img 
-              src={event.imageUrl} 
-              alt={event.title}
-              className="w-full h-full object-cover"
-            />
+        {/* Image Gallery */}
+        {imageUrls.length > 0 ? (
+          <div className="p-6 border-b">
+            <h2 className="text-xl font-semibold text-gray-800 mb-4">
+              Event Images ({imageUrls.length})
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {imageUrls.map((imageUrl: string, index: number) => (
+                <div key={index} className="relative group">
+                  <div className="relative h-64 w-full overflow-hidden rounded-lg bg-gray-100">
+                    <Image
+                      src={imageUrl}
+                      alt={`${event.title} - Image ${index + 1}`}
+                      fill
+                      className="object-cover group-hover:scale-105 transition-transform duration-300"
+                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                    />
+                  </div>
+                  <div className="absolute top-2 right-2 bg-black bg-opacity-60 text-white px-2 py-1 rounded-md text-xs">
+                    Image {index + 1}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="p-6 border-b bg-gray-50">
+            <div className="text-center py-8">
+              <div className="text-gray-400 text-sm mb-2">No images uploaded for this event</div>
+              <div className="relative h-48 w-full max-w-md mx-auto bg-gray-200 rounded-lg flex items-center justify-center">
+                <span className="text-gray-500">No Image Available</span>
+              </div>
+            </div>
           </div>
         )}
         
@@ -78,16 +106,26 @@ export default async function EventDetailPage({ params }: PageProps) {
           <h2 className="text-xl font-semibold text-gray-800 mb-4">Event Details</h2>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <div>
+            <div className="md:col-span-2">
               <h3 className="text-sm font-medium text-gray-500">Description</h3>
-              <p className="mt-1 text-gray-800">{event.description}</p>
+              <p className="mt-1 text-gray-800 whitespace-pre-line">{event.description}</p>
             </div>
             
             <div>
               <h3 className="text-sm font-medium text-gray-500">Date & Time</h3>
               <p className="mt-1 text-gray-800">
-                {new Date(event.date).toLocaleDateString()} at{' '}
-                {new Date(event.date).toLocaleTimeString()}
+                {new Date(event.date).toLocaleDateString('en-IN', {
+                  weekday: 'long',
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric'
+                })}
+              </p>
+              <p className="mt-1 text-gray-600 text-sm">
+                {new Date(event.date).toLocaleTimeString('en-IN', {
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
               </p>
             </div>
             
@@ -104,14 +142,29 @@ export default async function EventDetailPage({ params }: PageProps) {
             <div>
               <h3 className="text-sm font-medium text-gray-500">Seating Capacity</h3>
               <p className="mt-1 text-gray-800">
-                {event.availableSeats} available out of {event.totalSeats} total seats
+                <span className={`font-semibold ${
+                  event.availableSeats > 0 ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {event.availableSeats} available
+                </span>{' '}
+                out of {event.totalSeats} total seats
               </p>
+              {event.availableSeats === 0 && (
+                <p className="mt-1 text-red-600 text-sm font-medium">Event is sold out</p>
+              )}
             </div>
             
             <div>
               <h3 className="text-sm font-medium text-gray-500">Created By</h3>
               <p className="mt-1 text-gray-800">
                 {event.createdBy.name} ({event.createdBy.email})
+              </p>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-medium text-gray-500">Created On</h3>
+              <p className="mt-1 text-gray-800">
+                {new Date(event.createdAt).toLocaleDateString('en-IN')}
               </p>
             </div>
           </div>

@@ -7,22 +7,58 @@ import { useRouter } from 'next/navigation';
 export default function NewEventPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const router = useRouter();
 
-  async function handleCreate(formData: FormData) {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    setSelectedFiles(files);
+  };
+
+  const removeFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  async function handleSubmit(formData: FormData) {
     setIsLoading(true);
-    const result = await createEvent(formData);
+    setMessage(null);
     
-    if (result.success) {
-      setMessage('Event created successfully!');
-      // Redirect to events list after a short delay
-      setTimeout(() => {
-        router.push('/admin/events');
-      }, 1500);
-    } else {
-      setMessage(result.error || 'Failed to create event');
+    try {
+      // Create a new FormData instance
+      const submitData = new FormData();
+      
+      // Add all form fields
+      submitData.append('title', formData.get('title') as string);
+      submitData.append('description', formData.get('description') as string);
+      submitData.append('location', formData.get('location') as string);
+      submitData.append('date', formData.get('date') as string);
+      submitData.append('price', formData.get('price') as string);
+      submitData.append('totalSeats', formData.get('totalSeats') as string);
+      
+      // Append each selected file
+      selectedFiles.forEach((file) => {
+        submitData.append('images', file);
+      });
+
+      console.log('Submitting form with files:', selectedFiles.length);
+      
+      const result = await createEvent(submitData);
+      
+      if (result.success) {
+        setMessage('Event created successfully!');
+        // Redirect to events list after a short delay
+        setTimeout(() => {
+          router.push('/admin/events');
+        }, 1500);
+      } else {
+        setMessage(result.error || 'Failed to create event');
+      }
+    } catch (error) {
+      console.error('Form submission error:', error);
+      setMessage('An error occurred while creating the event');
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }
 
   return (
@@ -33,7 +69,7 @@ export default function NewEventPage() {
       </div>
       
       <div className="bg-white rounded-lg shadow-md p-6">
-        <form action={handleCreate} className="space-y-4">
+        <form action={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">
               Title *
@@ -120,17 +156,52 @@ export default function NewEventPage() {
             </div>
           </div>
           
+          {/* File Upload Section */}
           <div>
-            <label htmlFor="imageUrl" className="block text-sm font-medium text-gray-700 mb-1">
-              Image URL
+            <label htmlFor="images" className="block text-sm font-medium text-gray-700 mb-1">
+              Event Images *
             </label>
             <input 
-              id="imageUrl"
-              name="imageUrl" 
-              placeholder="https://example.com/image.jpg" 
+              id="images"
+              type="file" 
+              multiple
+              accept="image/*"
+              onChange={handleFileChange}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+            <p className="text-sm text-gray-500 mt-1">
+              You can select multiple images. Supported formats: JPG, PNG, WebP (Max 5MB each)
+            </p>
           </div>
+
+          {/* Selected Files Preview */}
+          {selectedFiles.length > 0 && (
+            <div className="mt-4">
+              <h3 className="text-sm font-medium text-gray-700 mb-2">Selected Images ({selectedFiles.length}):</h3>
+              <div className="space-y-2">
+                {selectedFiles.map((file, index) => (
+                  <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded-md">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center">
+                        <span className="text-xs text-gray-500">IMG</span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">{file.name}</p>
+                        <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeFile(index)}
+                      className="text-red-500 hover:text-red-700 text-sm font-medium"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           
           <div className="flex justify-between pt-4">
             <button
@@ -142,8 +213,12 @@ export default function NewEventPage() {
             </button>
             <button 
               type="submit" 
-              disabled={isLoading}
-              className={`px-6 py-2 rounded-md text-white font-medium ${isLoading ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'} transition-colors`}
+              disabled={isLoading || selectedFiles.length === 0}
+              className={`px-6 py-2 rounded-md text-white font-medium ${
+                isLoading || selectedFiles.length === 0 
+                  ? 'bg-blue-400 cursor-not-allowed' 
+                  : 'bg-blue-600 hover:bg-blue-700'
+              } transition-colors`}
             >
               {isLoading ? 'Creating...' : 'Create Event'}
             </button>
