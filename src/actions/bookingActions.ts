@@ -1,12 +1,19 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import mongoose from 'mongoose';
 import dbConnect from '@/lib/mongoose';
 import { requireAuth } from '@/lib/auth';
-import { generateBookingCode } from '@/lib/utils';
-import { sanitizeMongoData, toPlainObject, toPlainArray } from '@/lib/mongoUtils';
+import { toPlainObject, toPlainArray, sanitizeMongoData } from '@/lib/mongoUtils';
 
-// Import models inside the functions to ensure they're registered after connection
+// Helper function to generate booking code
+function generateBookingCode(): string {
+  return 'BK' + Date.now() + Math.random().toString(36).substr(2, 5).toUpperCase();
+}
+
+// ========================
+// Model Import Functions
+// ========================
 async function getBookingModel() {
   await dbConnect();
   try {
@@ -41,7 +48,7 @@ async function getUserModel() {
 }
 
 // ========================
-// Create a booking (server action for form submission)
+// Create a booking (with payment support)
 // ========================
 export async function createBooking(eventId: string, formData: FormData) {
   try {
@@ -51,6 +58,8 @@ export async function createBooking(eventId: string, formData: FormData) {
 
     // Parse tickets from form data
     const tickets = parseInt(formData.get('tickets') as string, 10) || 1;
+    const paymentId = formData.get('paymentId') as string;
+    const orderId = formData.get('orderId') as string;
 
     const event = await Event.findById(eventId);
     if (!event) return { success: false, error: 'Event not found' };
@@ -58,7 +67,7 @@ export async function createBooking(eventId: string, formData: FormData) {
     if (event.availableSeats < tickets)
       return { success: false, error: 'Not enough seats available' };
 
-    // Create booking
+    // Create booking with payment info
     const booking = await Booking.create({
       userId: user._id,
       eventId: event._id,
@@ -66,6 +75,8 @@ export async function createBooking(eventId: string, formData: FormData) {
       totalPrice: tickets * event.price,
       bookingCode: generateBookingCode(),
       status: 'confirmed',
+      paymentId: paymentId || undefined,
+      orderId: orderId || undefined,
     });
 
     // Update event available seats
@@ -136,7 +147,7 @@ export async function cancelBooking(bookingId: string) {
 }
 
 // ========================
-// Get all bookings of current user
+// Get all bookings of current user - FIXED VERSION
 // ========================
 export async function getUserBookings() {
   const user = await requireAuth();
@@ -144,22 +155,135 @@ export async function getUserBookings() {
   const Event = await getEventModel();
 
   try {
-    const bookings = await Booking.find({ userId: user._id })
-      .populate('eventId')
-      .sort({ createdAt: -1 });
+    // Use aggregation to get bookings with event information
+    const bookings = await Booking.aggregate([
+      { $match: { userId: new mongoose.Types.ObjectId(user._id) } },
+      {
+        $lookup: {
+          from: 'events',
+          localField: 'eventId',
+          foreignField: '_id',
+          as: 'event'
+        }
+      },
+      {
+        $unwind: {
+          path: '$event',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          bookingCode: 1,
+          tickets: 1,
+          totalPrice: 1,
+          status: 1,
+          paymentId: 1,
+          orderId: 1,
+          createdAt: 1,
+          'event._id': 1,
+          'event.title': 1,
+          'event.date': 1,
+          'event.location': 1,
+          'event.price': 1,
+          'event.description': 1,
+          'event.image': 1
+        }
+      },
+      { $sort: { createdAt: -1 } }
+    ]);
 
-    // Sanitize all bookings before returning
-    const sanitizedBookings = toPlainArray(bookings);
+    // If aggregation returns empty, try the populate method
+    let finalBookings = bookings;
+    if (bookings.length === 0) {
+      console.log('Trying populate method for user bookings...');
+      const populatedBookings = await Booking.find({ userId: user._id })
+        .populate('eventId')
+        .sort({ createdAt: -1 })
+        .lean();
+      
+      finalBookings = populatedBookings;
+    }
 
-    return { success: true, bookings: sanitizedBookings };
+    // Transform the data to consistent format
+    const transformedBookings = finalBookings.map((booking: any) => {
+      // Handle event data from different sources
+      let eventData = {
+        _id: '',
+        title: 'Unknown Event',
+        date: new Date(),
+        location: 'Unknown Location',
+        price: 0,
+        description: '',
+        image: ''
+      };
+
+      if (booking.event) {
+        // From aggregation
+        eventData = {
+          _id: booking.event._id?.toString() || '',
+          title: booking.event.title || 'Unknown Event',
+          date: booking.event.date ? new Date(booking.event.date) : new Date(),
+          location: booking.event.location || 'Unknown Location',
+          price: booking.event.price || 0,
+          description: booking.event.description || '',
+          image: booking.event.image || ''
+        };
+      } else if (booking.eventId && typeof booking.eventId === 'object') {
+        // From populate method
+        eventData = {
+          _id: booking.eventId._id?.toString() || '',
+          title: booking.eventId.title || 'Unknown Event',
+          date: booking.eventId.date ? new Date(booking.eventId.date) : new Date(),
+          location: booking.eventId.location || 'Unknown Location',
+          price: booking.eventId.price || 0,
+          description: booking.eventId.description || '',
+          image: booking.eventId.image || ''
+        };
+      } else if (typeof booking.eventId === 'string') {
+        // Only event ID available
+        eventData = {
+          _id: booking.eventId,
+          title: 'Event (Loading...)',
+          date: new Date(),
+          location: 'Location not available',
+          price: 0,
+          description: '',
+          image: ''
+        };
+      }
+
+      return {
+        _id: booking._id?.toString() || '',
+        bookingCode: booking.bookingCode || '',
+        tickets: booking.tickets || 0,
+        totalPrice: booking.totalPrice || 0,
+        status: booking.status || 'confirmed',
+        paymentId: booking.paymentId || '',
+        orderId: booking.orderId || '',
+        createdAt: booking.createdAt ? new Date(booking.createdAt).toISOString() : new Date().toISOString(),
+        event: eventData
+      };
+    });
+
+    console.log(`✅ Fetched ${transformedBookings.length} bookings for user ${user._id}`);
+    
+    return { 
+      success: true, 
+      bookings: transformedBookings 
+    };
   } catch (err: any) {
-    console.error('Bookings fetch error:', err);
-    return { success: false, error: err.message || 'Failed to fetch bookings' };
+    console.error('User bookings fetch error:', err);
+    return { 
+      success: false, 
+      error: err.message || 'Failed to fetch bookings' 
+    };
   }
 }
 
 // ========================
-// Get all bookings for a specific event (admin only)
+// Get all bookings for a specific event (admin only) - FIXED VERSION
 // ========================
 export async function getEventBookings(eventId: string) {
   const user = await requireAuth();
@@ -170,17 +294,130 @@ export async function getEventBookings(eventId: string) {
   const User = await getUserModel();
 
   try {
-    const bookings = await Booking.find({ eventId })
-      .populate('userId', 'name email')
-      .sort({ createdAt: -1 });
+    console.log('Fetching bookings for event:', eventId);
 
-    // Sanitize all bookings before returning
-    const sanitizedBookings = toPlainArray(bookings);
+    // Method 1: Using aggregation (more reliable)
+    const bookings = await Booking.aggregate([
+      { $match: { eventId: new mongoose.Types.ObjectId(eventId) } },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userId',
+          foreignField: '_id',
+          as: 'user'
+        }
+      },
+      {
+        $unwind: {
+          path: '$user',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          bookingCode: 1,
+          tickets: 1,
+          totalPrice: 1,
+          status: 1,
+          paymentId: 1,
+          orderId: 1,
+          createdAt: 1,
+          'user._id': 1,
+          'user.name': 1,
+          'user.email': 1
+        }
+      },
+      { $sort: { createdAt: -1 } }
+    ]);
 
-    return { success: true, bookings: sanitizedBookings };
+    console.log('Aggregation result count:', bookings.length);
+
+    // If aggregation returns empty, try the populate method
+    let finalBookings = bookings;
+    if (bookings.length === 0) {
+      console.log('Trying populate method...');
+      const populatedBookings = await Booking.find({ eventId })
+        .populate('userId', 'name email')
+        .sort({ createdAt: -1 })
+        .lean();
+      
+      finalBookings = populatedBookings;
+      console.log('Populate method result count:', populatedBookings.length);
+    }
+
+    // If still no data, try manual population
+    if (finalBookings.length === 0) {
+      console.log('Trying manual population...');
+      const rawBookings = await Booking.find({ eventId }).sort({ createdAt: -1 }).lean();
+      
+      finalBookings = await Promise.all(
+        rawBookings.map(async (booking: any) => {
+          try {
+            const user = await User.findById(booking.userId).select('name email').lean();
+            return {
+              ...booking,
+              user: user || { name: 'Unknown User', email: 'No email available' }
+            };
+          } catch (userError) {
+            console.error('Error fetching user for booking:', booking._id, userError);
+            return {
+              ...booking,
+              user: { name: 'Error Loading User', email: 'Error' }
+            };
+          }
+        })
+      );
+    }
+
+    // Transform the data to consistent format
+    const transformedBookings = finalBookings.map((booking: any) => {
+      // Handle different data structures
+      let userName = 'Unknown User';
+      let userEmail = '';
+
+      if (booking.user) {
+        // From aggregation or manual population
+        userName = booking.user.name || 'Unknown User';
+        userEmail = booking.user.email || '';
+      } else if (booking.userId && typeof booking.userId === 'object') {
+        // From populate method
+        userName = booking.userId.name || 'Unknown User';
+        userEmail = booking.userId.email || '';
+      } else if (typeof booking.userId === 'string') {
+        // Only user ID available
+        userName = `User (${booking.userId})`;
+        userEmail = 'Not available';
+      }
+
+      return {
+        _id: booking._id?.toString() || '',
+        bookingCode: booking.bookingCode || '',
+        tickets: booking.tickets || 0,
+        totalPrice: booking.totalPrice || 0,
+        status: booking.status || 'confirmed',
+        paymentId: booking.paymentId || '',
+        orderId: booking.orderId || '',
+        createdAt: booking.createdAt ? new Date(booking.createdAt).toISOString() : new Date().toISOString(),
+        userId: {
+          name: userName,
+          email: userEmail,
+        }
+      };
+    });
+
+    console.log('Final transformed bookings:', transformedBookings.length);
+    
+    return { 
+      success: true, 
+      bookings: transformedBookings 
+    };
   } catch (err: any) {
     console.error('Event bookings fetch error:', err);
-    return { success: false, error: err.message || 'Failed to fetch event bookings' };
+    return { 
+      success: false, 
+      error: err.message || 'Failed to fetch event bookings' 
+    };
   }
 }
 
@@ -235,6 +472,8 @@ export async function getAllBookings(): Promise<{ success: boolean; bookings?: a
           tickets: 1,
           totalPrice: 1,
           status: 1,
+          paymentId: 1,
+          orderId: 1,
           createdAt: 1,
           'user._id': 1,
           'user.name': 1,
@@ -260,6 +499,8 @@ export async function getAllBookings(): Promise<{ success: boolean; bookings?: a
       tickets: booking.tickets || 0,
       totalPrice: booking.totalPrice || 0,
       status: booking.status || 'pending',
+      paymentId: booking.paymentId || '',
+      orderId: booking.orderId || '',
       createdAt: booking.createdAt ? new Date(booking.createdAt).toISOString() : new Date().toISOString(),
       user: {
         _id: booking.user?._id?.toString() || '',

@@ -1,8 +1,8 @@
-import mongoose, { Document, Model, Schema } from 'mongoose';
+import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
 export interface IBooking extends Document {
-  eventId: mongoose.Types.ObjectId;
-  userId: mongoose.Types.ObjectId;
+  eventId: Types.ObjectId;
+  userId: Types.ObjectId;
   tickets: number;
   totalPrice: number;
   bookingCode: string;
@@ -11,8 +11,16 @@ export interface IBooking extends Document {
 }
 
 const bookingSchema = new Schema<IBooking>({
-  eventId: { type: Schema.Types.ObjectId, required: true },
-  userId: { type: Schema.Types.ObjectId, required: true },
+  eventId: { 
+    type: Schema.Types.ObjectId, 
+    required: true,
+    ref: 'Event'
+  },
+  userId: { 
+    type: Schema.Types.ObjectId, 
+    required: true,
+    ref: 'User' // Make sure this matches your User model name
+  },
   tickets: { type: Number, required: true },
   totalPrice: { type: Number, required: true },
   bookingCode: { type: String, required: true, unique: true },

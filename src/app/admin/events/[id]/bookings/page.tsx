@@ -8,6 +8,11 @@ interface PageProps {
   }>;
 }
 
+interface UserInfo {
+  name: string;
+  email: string;
+}
+
 interface Booking {
   _id: string;
   bookingCode: string;
@@ -15,10 +20,7 @@ interface Booking {
   totalPrice: number;
   status: 'confirmed' | 'cancelled' | 'pending';
   createdAt: string;
-  userId: {
-    name: string;
-    email: string;
-  };
+  userId: UserInfo;
 }
 
 export default async function EventBookingsPage({ params }: PageProps) {
@@ -56,18 +58,7 @@ export default async function EventBookingsPage({ params }: PageProps) {
     );
   }
 
-  const bookings: Booking[] = (result.bookings || []).map((b: any) => ({
-    _id: b._id.toString(),
-    bookingCode: b.bookingCode,
-    tickets: b.tickets,
-    totalPrice: b.totalPrice,
-    status: b.status,
-    createdAt: b.createdAt,
-    userId: {
-      name: b.userId?.name || 'Unknown User',
-      email: b.userId?.email || '',
-    },
-  }));
+  const bookings: Booking[] = result.bookings || [];
 
   // Calculate statistics for this event
   const totalBookings = bookings.length;
