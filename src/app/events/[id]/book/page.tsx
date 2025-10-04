@@ -1,9 +1,9 @@
-// app/events/[id]/book/page.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { getEventById } from '@/actions/eventActions';
+import { checkUserBooking } from '@/actions/bookingActions';
 import { formatCurrency } from '@/lib/utils';
 
 interface PageProps {
@@ -15,31 +15,44 @@ export default function BookEventPage({ params }: PageProps) {
   const [event, setEvent] = useState<any>(null);
   const [eventId, setEventId] = useState<string>('');
   const [error, setError] = useState('');
+  const [alreadyBooked, setAlreadyBooked] = useState(false);
+  const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  // Load event data using useEffect
+  // Load event data and check booking status
   useEffect(() => {
-    async function loadEvent() {
+    async function loadEventAndCheckBooking() {
       try {
+        setLoading(true);
         const resolvedParams = await params;
         setEventId(resolvedParams.id);
         
+        // Load event data
         const eventData = await getEventById(resolvedParams.id);
         if (eventData.success) {
           setEvent(eventData.event);
+          
+          // Check if user already booked this event
+          const bookingCheck = await checkUserBooking(resolvedParams.id);
+          if (bookingCheck.success && bookingCheck.alreadyBooked) {
+            setAlreadyBooked(true);
+            setError('You have already booked tickets for this event. You cannot book multiple times.');
+          }
         } else {
           setError('Event not found');
         }
       } catch (err) {
         setError('Failed to load event');
+      } finally {
+        setLoading(false);
       }
     }
     
-    loadEvent();
+    loadEventAndCheckBooking();
   }, [params]);
 
   const handleProceedToPayment = () => {
-    if (!event) return;
+    if (!event || alreadyBooked) return;
     
     const totalPrice = tickets * event.price;
     
@@ -47,7 +60,7 @@ export default function BookEventPage({ params }: PageProps) {
     router.push(`/payment?eventId=${eventId}&tickets=${tickets}&totalPrice=${totalPrice}`);
   };
 
-  if (!event) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -58,7 +71,25 @@ export default function BookEventPage({ params }: PageProps) {
     );
   }
 
+  if (!event) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-gray-800 mb-4">Event Not Found</h1>
+          <p className="text-gray-600">The event you're looking for doesn't exist.</p>
+          <button 
+            onClick={() => router.push('/events')}
+            className="mt-4 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Browse Events
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const totalPrice = tickets * event.price;
+  const canBook = event.availableSeats > 0 && !alreadyBooked;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8">
@@ -122,111 +153,135 @@ export default function BookEventPage({ params }: PageProps) {
               <span className="text-lg font-bold text-blue-800">{event.availableSeats}</span>
             </div>
           </div>
-        </div>
 
-        {/* Booking Form */}
-        <div className="bg-white rounded-2xl shadow-lg p-6">
-          {/* Tickets Selection */}
-          <div className="mb-6">
-            <label htmlFor="tickets" className="block text-sm font-medium text-gray-700 mb-3">
-              Number of Tickets
-            </label>
-            <div className="flex items-center space-x-4">
-              <button
-                type="button"
-                onClick={() => setTickets(Math.max(1, tickets - 1))}
-                disabled={tickets <= 1}
-                className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                -
-              </button>
-              <input
-                type="number"
-                id="tickets"
-                name="tickets"
-                min="1"
-                max={event.availableSeats}
-                value={tickets}
-                onChange={(e) => setTickets(parseInt(e.target.value) || 1)}
-                className="w-20 text-center border border-gray-300 rounded-lg py-2 px-3 text-lg font-semibold"
-              />
-              <button
-                type="button"
-                onClick={() => setTickets(Math.min(event.availableSeats, tickets + 1))}
-                disabled={tickets >= event.availableSeats}
-                className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                +
-              </button>
-              <span className="text-sm text-gray-500 ml-2">
-                Max: {event.availableSeats} tickets
-              </span>
-            </div>
-          </div>
-
-          {/* Price Summary */}
-          <div className="bg-gray-50 rounded-lg p-4 mb-6">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-gray-600">Price per ticket</span>
-              <span className="font-medium">{formatCurrency(event.price)}</span>
-            </div>
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-gray-600">Quantity</span>
-              <span className="font-medium">{tickets}</span>
-            </div>
-            <div className="border-t border-gray-200 pt-2 mt-2">
-              <div className="flex justify-between items-center">
-                <span className="text-lg font-semibold text-gray-800">Total Amount</span>
-                <span className="text-2xl font-bold text-blue-600">
-                  {formatCurrency(totalPrice)}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Error Message */}
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-              <div className="flex items-center">
-                <svg className="w-5 h-5 text-red-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span className="text-red-800">{error}</span>
-              </div>
-            </div>
-          )}
-
-          {/* Action Buttons */}
-          <div className="flex space-x-4">
-            <button
-              type="button"
-              onClick={() => router.back()}
-              className="flex-1 bg-gray-500 text-white py-3 px-6 rounded-lg hover:bg-gray-600 transition-colors font-medium"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleProceedToPayment}
-              disabled={event.availableSeats === 0}
-              className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
-            >
-              Proceed to Payment
-            </button>
-          </div>
-
-          {/* Warning for no seats */}
-          {event.availableSeats === 0 && (
-            <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          {/* Already Booked Warning */}
+          {alreadyBooked && (
+            <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
               <div className="flex items-center">
                 <svg className="w-5 h-5 text-yellow-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.35 16.5c-.77.833.192 2.5 1.732 2.5z" />
                 </svg>
-                <span className="text-yellow-800">This event is fully booked</span>
+                <span className="text-yellow-800 font-medium">
+                  You have already booked this event. Check your bookings to view details.
+                </span>
+              </div>
+              <div className="mt-2">
+                <button
+                  onClick={() => router.push('/user/bookings')}
+                  className="text-yellow-800 underline hover:text-yellow-900"
+                >
+                  View My Bookings
+                </button>
               </div>
             </div>
           )}
         </div>
+
+        {/* Booking Form */}
+        {!alreadyBooked && (
+          <div className="bg-white rounded-2xl shadow-lg p-6">
+            {/* Tickets Selection */}
+            <div className="mb-6">
+              <label htmlFor="tickets" className="block text-sm font-medium text-gray-700 mb-3">
+                Number of Tickets
+              </label>
+              <div className="flex items-center space-x-4">
+                <button
+                  type="button"
+                  onClick={() => setTickets(Math.max(1, tickets - 1))}
+                  disabled={tickets <= 1}
+                  className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  id="tickets"
+                  name="tickets"
+                  min="1"
+                  max={event.availableSeats}
+                  value={tickets}
+                  onChange={(e) => setTickets(parseInt(e.target.value) || 1)}
+                  className="w-20 text-center border border-gray-300 rounded-lg py-2 px-3 text-lg font-semibold"
+                />
+                <button
+                  type="button"
+                  onClick={() => setTickets(Math.min(event.availableSeats, tickets + 1))}
+                  disabled={tickets >= event.availableSeats}
+                  className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  +
+                </button>
+                <span className="text-sm text-gray-500 ml-2">
+                  Max: {event.availableSeats} tickets
+                </span>
+              </div>
+            </div>
+
+            {/* Price Summary */}
+            <div className="bg-gray-50 rounded-lg p-4 mb-6">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-gray-600">Price per ticket</span>
+                <span className="font-medium">{formatCurrency(event.price)}</span>
+              </div>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-gray-600">Quantity</span>
+                <span className="font-medium">{tickets}</span>
+              </div>
+              <div className="border-t border-gray-200 pt-2 mt-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-lg font-semibold text-gray-800">Total Amount</span>
+                  <span className="text-2xl font-bold text-blue-600">
+                    {formatCurrency(totalPrice)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Error Message */}
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                <div className="flex items-center">
+                  <svg className="w-5 h-5 text-red-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-red-800">{error}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex space-x-4">
+              <button
+                type="button"
+                onClick={() => router.back()}
+                className="flex-1 bg-gray-500 text-white py-3 px-6 rounded-lg hover:bg-gray-600 transition-colors font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleProceedToPayment}
+                disabled={!canBook}
+                className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+              >
+                Proceed to Payment
+              </button>
+            </div>
+
+            {/* Warning for no seats */}
+            {event.availableSeats === 0 && (
+              <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="flex items-center">
+                  <svg className="w-5 h-5 text-yellow-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.35 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                  <span className="text-yellow-800">This event is fully booked</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

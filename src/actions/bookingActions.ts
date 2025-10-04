@@ -48,6 +48,35 @@ async function getUserModel() {
 }
 
 // ========================
+// Check if user already booked an event
+// ========================
+export async function checkUserBooking(eventId: string) {
+  try {
+    const user = await requireAuth();
+    const Booking = await getBookingModel();
+
+    const existingBooking = await Booking.findOne({
+      userId: user._id,
+      eventId: new mongoose.Types.ObjectId(eventId),
+      status: 'confirmed'
+    });
+
+    return { 
+      success: true, 
+      alreadyBooked: !!existingBooking,
+      booking: existingBooking ? toPlainObject(existingBooking) : null
+    };
+  } catch (err: any) {
+    console.error('Check booking error:', err);
+    return { 
+      success: false, 
+      error: err.message || 'Failed to check booking status',
+      alreadyBooked: false 
+    };
+  }
+}
+
+// ========================
 // Create a booking (with payment support)
 // ========================
 export async function createBooking(eventId: string, formData: FormData) {
@@ -66,6 +95,20 @@ export async function createBooking(eventId: string, formData: FormData) {
 
     if (event.availableSeats < tickets)
       return { success: false, error: 'Not enough seats available' };
+
+    // ✅ CHECK IF USER ALREADY BOOKED THIS EVENT
+    const existingBooking = await Booking.findOne({
+      userId: user._id,
+      eventId: event._id,
+      status: 'confirmed' // Only check confirmed bookings
+    });
+
+    if (existingBooking) {
+      return { 
+        success: false, 
+        error: 'You have already booked tickets for this event. You cannot book multiple times for the same event.' 
+      };
+    }
 
     // Create booking with payment info
     const booking = await Booking.create({
@@ -94,6 +137,15 @@ export async function createBooking(eventId: string, formData: FormData) {
     return { success: true, booking: sanitizedBooking };
   } catch (err: any) {
     console.error('Booking error:', err);
+    
+    // Handle duplicate booking error from MongoDB unique index
+    if (err.code === 11000) {
+      return { 
+        success: false, 
+        error: 'You have already booked tickets for this event. You cannot book multiple times for the same event.' 
+      };
+    }
+    
     return { success: false, error: err.message || 'Something went wrong' };
   }
 }

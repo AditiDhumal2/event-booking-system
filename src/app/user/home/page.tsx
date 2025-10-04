@@ -4,6 +4,7 @@ import { getToken } from '@/actions/authActions';
 import { getCurrentUser } from '@/lib/auth';
 import EventCard from '@/components/ui/EventCard';
 import SearchBar from '@/components/shared/SearchBar';
+import { searchEvents, getEventsByCategory } from '@/actions/userActions';
 
 interface PageProps {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
@@ -23,12 +24,28 @@ export default async function UserHomePage({ searchParams }: PageProps) {
   // Await the searchParams promise
   const params = await searchParams;
   const searchQuery = typeof params.q === 'string' ? params.q : '';
-  const filters = searchQuery ? { title: { $regex: searchQuery, $options: 'i' } } : {};
+  const category = typeof params.category === 'string' ? params.category : '';
   
-  const eventsResult = await getEvents(filters);
+  let events: any[] = [];
   
-  // Provide safe fallback for undefined events - FIXED THE TYPESCRIPT ERROR
-  const events = eventsResult.success && eventsResult.events ? eventsResult.events : [];
+  // USE SEARCH FUNCTIONALITY
+  if (category) {
+    // Use category-specific search
+    const searchResult = await getEventsByCategory(category);
+    if (searchResult.success) {
+      events = searchResult.events;
+    }
+  } else if (searchQuery) {
+    // Use general search
+    const searchResult = await searchEvents(searchQuery);
+    if (searchResult.success) {
+      events = searchResult.events;
+    }
+  } else {
+    // Use original getEvents when no search
+    const eventsResult = await getEvents({});
+    events = eventsResult.success && eventsResult.events ? eventsResult.events : [];
+  }
 
   // Filter upcoming events (events with future dates)
   const upcomingEvents = events.filter((event: any) => {
@@ -57,12 +74,15 @@ export default async function UserHomePage({ searchParams }: PageProps) {
 
   const techEvents = upcomingEvents.filter((event: any) => 
     event.title.toLowerCase().includes('tech') || 
+    event.title.toLowerCase().includes('technology') ||
     event.title.toLowerCase().includes('conference') ||
     event.title.toLowerCase().includes('workshop') ||
-    event.title.toLowerCase().includes('startup') ||
+    event.title.toLowerCase().includes('ai') ||
+    event.title.toLowerCase().includes('programming') ||
     event.description.toLowerCase().includes('technology') ||
     event.description.toLowerCase().includes('programming') ||
-    event.description.toLowerCase().includes('coding')
+    event.description.toLowerCase().includes('coding') ||
+    event.description.toLowerCase().includes('software')
   );
 
   const sportsEvents = upcomingEvents.filter((event: any) => 
@@ -83,16 +103,7 @@ export default async function UserHomePage({ searchParams }: PageProps) {
     event.description.toLowerCase().includes('cooking')
   );
 
-  const businessEvents = upcomingEvents.filter((event: any) => 
-    event.title.toLowerCase().includes('business') || 
-    event.title.toLowerCase().includes('networking') ||
-    event.title.toLowerCase().includes('seminar') ||
-    event.description.toLowerCase().includes('business') ||
-    event.description.toLowerCase().includes('networking') ||
-    event.description.toLowerCase().includes('entrepreneur')
-  );
-
-  // All categories for display
+  // All categories for display (REMOVED BUSINESS)
   const categories = [
     {
       name: "Music",
@@ -128,13 +139,6 @@ export default async function UserHomePage({ searchParams }: PageProps) {
       icon: "🍕",
       color: "bg-yellow-100",
       textColor: "text-yellow-600"
-    },
-    {
-      name: "Business",
-      count: businessEvents.length,
-      icon: "💼",
-      color: "bg-indigo-100",
-      textColor: "text-indigo-600"
     }
   ];
 
@@ -156,6 +160,25 @@ export default async function UserHomePage({ searchParams }: PageProps) {
           <SearchBar placeholder="Search events by name, location, or category..." />
         </div>
 
+        {/* Search Results Info */}
+        {(searchQuery || category) && (
+          <div className="mb-8 text-center">
+            <h2 className="text-2xl font-semibold mb-2">
+              {upcomingEvents.length > 0 
+                ? `Found ${upcomingEvents.length} events`
+                : `No events found`
+              }
+            </h2>
+            {(searchQuery || category) && (
+              <p className="text-gray-600">
+                {searchQuery && `for "${searchQuery}"`}
+                {searchQuery && category && ' in '}
+                {category && `category: ${category}`}
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Categories Section */}
         <section className="mb-16">
           <div className="text-center mb-10">
@@ -163,7 +186,7 @@ export default async function UserHomePage({ searchParams }: PageProps) {
             <p className="text-gray-600">Find events that match your interests</p>
           </div>
           
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             {categories.map((category) => (
               <div
                 key={category.name}
@@ -317,40 +340,20 @@ export default async function UserHomePage({ searchParams }: PageProps) {
               </div>
             </section>
           )}
-
-          {/* Business Events Section */}
-          {businessEvents.length > 0 && (
-            <section>
-              <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center space-x-3">
-                  <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center">
-                    <span className="text-2xl">💼</span>
-                  </div>
-                  <div>
-                    <h2 className="text-3xl font-bold text-gray-800">Business Events</h2>
-                    <p className="text-gray-600">Network and grow professionally</p>
-                  </div>
-                </div>
-                {businessEvents.length > 3 && (
-                  <a href="#all-events" className="text-blue-600 hover:text-blue-800 font-semibold">
-                    View All ({businessEvents.length})
-                  </a>
-                )}
-              </div>
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {businessEvents.slice(0, 3).map((event: any) => (
-                  <EventCard key={event._id.toString()} event={event} />
-                ))}
-              </div>
-            </section>
-          )}
         </div>
 
         {/* All Events Section */}
         <section id="all-events" className="mb-16">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-gray-800 mb-4">All Upcoming Events</h2>
-            <p className="text-gray-600">Discover all events happening near you</p>
+            <h2 className="text-3xl font-bold text-gray-800 mb-4">
+              {searchQuery || category ? 'Search Results' : 'All Upcoming Events'}
+            </h2>
+            <p className="text-gray-600">
+              {searchQuery || category 
+                ? 'Events matching your search criteria' 
+                : 'Discover all events happening near you'
+              }
+            </p>
           </div>
           
           {upcomingEvents.length > 0 ? (
@@ -368,33 +371,13 @@ export default async function UserHomePage({ searchParams }: PageProps) {
               </div>
               <h3 className="text-2xl font-semibold text-gray-800 mb-3">No Events Available</h3>
               <p className="text-gray-600 max-w-md mx-auto">
-                {searchQuery 
+                {searchQuery || category 
                   ? 'No events found matching your search. Try different keywords.' 
                   : 'Check back soon for new events!'
                 }
               </p>
             </div>
           )}
-        </section>
-
-        {/* Newsletter Section */}
-        <section className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl p-8 text-center text-white mb-16">
-          <div className="max-w-2xl mx-auto">
-            <h2 className="text-3xl font-bold mb-4">Never Miss an Event</h2>
-            <p className="text-blue-100 mb-6">
-              Subscribe to our newsletter and be the first to know about upcoming events, exclusive deals, and special offers.
-            </p>
-            <div className="flex max-w-md mx-auto gap-4">
-              <input
-                type="email"
-                placeholder="Enter your email"
-                className="flex-1 px-4 py-3 rounded-lg border border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 text-gray-800"
-              />
-              <button className="bg-white text-blue-600 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors">
-                Subscribe
-              </button>
-            </div>
-          </div>
         </section>
       </div>
     </div>

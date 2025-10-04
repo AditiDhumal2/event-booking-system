@@ -180,6 +180,218 @@ export async function changePassword(prevState: any, formData: FormData) {
   }
 }
 
+// ===== SEARCH ACTIONS =====
+
+// Helper function to detect category from content
+function detectCategoryFromContent(title: string, description: string): string {
+  const content = (title + ' ' + description).toLowerCase();
+  
+  if (content.includes('music') || content.includes('concert') || content.includes('festival') || content.includes('band')) {
+    return 'Music';
+  }
+  if (content.includes('art') || content.includes('painting') || content.includes('exhibition') || content.includes('gallery') || content.includes('sculpture')) {
+    return 'Art';
+  }
+  if (content.includes('tech') || content.includes('technology') || content.includes('programming') || content.includes('coding') || content.includes('software') || content.includes('conference') || content.includes('workshop') || content.includes('ai') || content.includes('artificial intelligence') || content.includes('machine learning')) {
+    return 'Technology';
+  }
+  if (content.includes('sport') || content.includes('game') || content.includes('tournament') || content.includes('match') || content.includes('competition')) {
+    return 'Sports';
+  }
+  if (content.includes('food') || content.includes('culinary') || content.includes('cooking') || content.includes('cuisine') || content.includes('restaurant')) {
+    return 'Food';
+  }
+  
+  return 'General';
+}
+
+export async function searchEvents(query: string): Promise<{ 
+  success: true; 
+  events: EventType[]; 
+} | { 
+  success: false; 
+  error: string; 
+}> {
+  try {
+    await dbConnect();
+    const { Event } = await import('@/models/Event');
+
+    console.log('🔍 SEARCH: Searching for:', query);
+    
+    let events;
+    
+    if (!query.trim()) {
+      // Return all upcoming events when no query
+      events = await Event.find({ 
+        date: { $gte: new Date() } 
+      })
+      .sort({ date: 1 })
+      .limit(50)
+      .populate('organizer', 'name email');
+    } else {
+      const searchLower = query.toLowerCase().trim();
+      
+      // Use simple regex search that always works
+      const searchRegex = new RegExp(searchLower, 'i');
+      
+      events = await Event.find({
+        $or: [
+          { title: searchRegex },
+          { description: searchRegex },
+          { category: searchRegex },
+          { tags: searchRegex },
+          { location: searchRegex }
+        ],
+        date: { $gte: new Date() }
+      })
+      .sort({ date: 1 })
+      .limit(50)
+      .populate('organizer', 'name email');
+      
+      console.log('🔍 SEARCH: Found', events.length, 'events for query:', query);
+    }
+
+    return {
+      success: true,
+      events: events.map(event => {
+        const eventObj = event.toObject();
+        
+        // Auto-detect category if missing or wrong
+        const detectedCategory = detectCategoryFromContent(eventObj.title, eventObj.description);
+        const finalCategory = eventObj.category && eventObj.category !== 'General' ? eventObj.category : detectedCategory;
+        
+        return {
+          _id: eventObj._id.toString(),
+          title: eventObj.title,
+          description: eventObj.description,
+          category: finalCategory,
+          tags: eventObj.tags || [],
+          location: eventObj.location,
+          totalSeats: eventObj.totalSeats,
+          availableSeats: eventObj.availableSeats,
+          date: eventObj.date,
+          time: eventObj.time || '19:00',
+          price: eventObj.price || 0,
+          image: eventObj.image || '',
+          imageUrls: eventObj.imageUrls || (eventObj.image ? [eventObj.image] : []),
+          organizer: eventObj.organizer || { name: 'Unknown', email: '' }
+        };
+      })
+    };
+  } catch (err: any) {
+    console.error('❌ SEARCH ERROR:', err);
+    return { 
+      success: false, 
+      error: err.message || 'Failed to search events' 
+    };
+  }
+}
+
+export async function getEventsByCategory(category: string): Promise<{ 
+  success: true; 
+  events: EventType[]; 
+} | { 
+  success: false; 
+  error: string; 
+}> {
+  try {
+    await dbConnect();
+    const { Event } = await import('@/models/Event');
+
+    console.log('🔍 CATEGORY SEARCH: Searching for category:', category);
+    
+    const categoryLower = category.toLowerCase().trim();
+    
+    // Get ALL upcoming events first
+    const allEvents = await Event.find({ 
+      date: { $gte: new Date() } 
+    })
+    .populate('organizer', 'name email')
+    .limit(100);
+    
+    console.log('🔍 CATEGORY SEARCH: Total upcoming events:', allEvents.length);
+    
+    // Filter events by category - both explicit category and content-based detection
+    const events = allEvents.filter(event => {
+      const eventObj = event.toObject();
+      
+      // Check explicit category
+      const explicitMatch = eventObj.category?.toLowerCase().includes(categoryLower);
+      
+      // Check if content matches the category
+      const contentMatch = 
+        eventObj.title?.toLowerCase().includes(categoryLower) ||
+        eventObj.description?.toLowerCase().includes(categoryLower) ||
+        (eventObj.tags && eventObj.tags.some((tag: string) => 
+          tag.toLowerCase().includes(categoryLower)
+        ));
+      
+      // Auto-detect category from content
+      const detectedCategory = detectCategoryFromContent(eventObj.title, eventObj.description);
+      const detectionMatch = detectedCategory.toLowerCase().includes(categoryLower);
+      
+      return explicitMatch || contentMatch || detectionMatch;
+    });
+    
+    console.log('🔍 CATEGORY SEARCH: Found', events.length, 'events for category', category);
+
+    return {
+      success: true,
+      events: events.map(event => {
+        const eventObj = event.toObject();
+        
+        // Auto-detect category if missing or wrong
+        const detectedCategory = detectCategoryFromContent(eventObj.title, eventObj.description);
+        const finalCategory = eventObj.category && eventObj.category !== 'General' ? eventObj.category : detectedCategory;
+        
+        return {
+          _id: eventObj._id.toString(),
+          title: eventObj.title,
+          description: eventObj.description,
+          category: finalCategory,
+          tags: eventObj.tags || [],
+          location: eventObj.location,
+          totalSeats: eventObj.totalSeats,
+          availableSeats: eventObj.availableSeats,
+          date: eventObj.date,
+          time: eventObj.time || '19:00',
+          price: eventObj.price || 0,
+          image: eventObj.image || '',
+          imageUrls: eventObj.imageUrls || (eventObj.image ? [eventObj.image] : []),
+          organizer: eventObj.organizer || { name: 'Unknown', email: '' }
+        };
+      })
+    };
+  } catch (err: any) {
+    console.error('❌ CATEGORY SEARCH ERROR:', err);
+    return { 
+      success: false, 
+      error: err.message || 'Failed to fetch events by category' 
+    };
+  }
+}
+
+// Update your EventType to include new fields
+export type EventType = {
+  _id: string;
+  title: string;
+  description: string;
+  category: string;
+  tags: string[];
+  location: string;
+  totalSeats: number;
+  availableSeats: number;
+  date: Date;
+  time: string;
+  price: number;
+  image: string;
+  imageUrls?: string[];
+  organizer: {
+    name: string;
+    email: string;
+  };
+};
+
 // ===== ADMIN ACTIONS =====
 export type UserType = {
   _id: string;
@@ -188,7 +400,7 @@ export type UserType = {
   role: string;
 };
 
-export async function getAllUsers(): Promise<{ success: true; users: UserType[] } | { success: false; error: string }> {
+export async function getAllUsers(): Promise<{ success: true; users: UserType[]; } | { success: false; error: string; }> {
   try {
     await dbConnect();
     const { User } = await import('@/models/User');
@@ -207,7 +419,7 @@ export async function getAllUsers(): Promise<{ success: true; users: UserType[] 
   }
 }
 
-export async function makeUserAdmin(userId: string): Promise<{ success: true; message: string } | { success: false; error: string }> {
+export async function makeUserAdmin(userId: string): Promise<{ success: true; message: string; } | { success: false; error: string; }> {
   try {
     await dbConnect();
     const { User } = await import('@/models/User');
@@ -222,39 +434,43 @@ export async function makeUserAdmin(userId: string): Promise<{ success: true; me
 }
 
 // ===== EVENT ACTIONS =====
-export type EventType = {
-  _id: string;
-  title: string;
-  description: string;
-  location: string;
-  totalSeats: number;
-  availableSeats: number;
-  date: Date;
-};
-
-export async function getAllEvents(): Promise<{ success: true; events: EventType[] } | { success: false; error: string }> {
+export async function getAllEvents(): Promise<{ success: true; events: EventType[]; } | { success: false; error: string; }> {
   try {
     await dbConnect();
     const { Event } = await import('@/models/Event');
-    const events = await Event.find({});
+    const events = await Event.find({})
+      .populate('organizer', 'name email');
     return {
       success: true,
-      events: events.map(e => ({
-        _id: e._id.toString(),
-        title: e.title,
-        description: e.description,
-        location: (e as any).location,
-        totalSeats: (e as any).totalSeats,
-        availableSeats: (e as any).availableSeats,
-        date: e.date,
-      })),
+      events: events.map(e => {
+        const eventObj = e.toObject();
+        const detectedCategory = detectCategoryFromContent(eventObj.title, eventObj.description);
+        const finalCategory = eventObj.category && eventObj.category !== 'General' ? eventObj.category : detectedCategory;
+        
+        return {
+          _id: eventObj._id.toString(),
+          title: eventObj.title,
+          description: eventObj.description,
+          category: finalCategory,
+          tags: eventObj.tags || [],
+          location: eventObj.location,
+          totalSeats: eventObj.totalSeats,
+          availableSeats: eventObj.availableSeats,
+          date: eventObj.date,
+          time: eventObj.time || '',
+          price: eventObj.price || 0,
+          image: eventObj.image || '',
+          imageUrls: eventObj.imageUrls || [],
+          organizer: eventObj.organizer || { name: 'Unknown', email: '' }
+        };
+      }),
     };
   } catch (err: any) {
     return { success: false, error: err.message || 'Failed to fetch events' };
   }
 }
 
-export async function addEvent(eventData: Omit<EventType, '_id'>): Promise<{ success: true; message: string } | { success: false; error: string }> {
+export async function addEvent(eventData: Omit<EventType, '_id'>): Promise<{ success: true; message: string; } | { success: false; error: string; }> {
   try {
     await dbConnect();
     const { Event } = await import('@/models/Event');
@@ -266,7 +482,7 @@ export async function addEvent(eventData: Omit<EventType, '_id'>): Promise<{ suc
   }
 }
 
-export async function deleteEvent(eventId: string): Promise<{ success: true; message: string } | { success: false; error: string }> {
+export async function deleteEvent(eventId: string): Promise<{ success: true; message: string; } | { success: false; error: string; }> {
   try {
     await dbConnect();
     const { Event } = await import('@/models/Event');

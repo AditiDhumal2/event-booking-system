@@ -1,34 +1,70 @@
-import { Schema, model, Document, Types, models } from "mongoose";
+import mongoose from 'mongoose';
 
-export interface IEvent extends Document {
-  _id: Types.ObjectId;
-  title: string;
-  description: string;
-  location: string;
-  totalSeats: number;
-  availableSeats: number;
-  date: Date;
-  price: number;
-  imageUrls: string[];
-  createdBy: Types.ObjectId;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-const EventSchema = new Schema<IEvent>(
-  {
-    title: { type: String, required: true },
-    description: { type: String, required: true },
-    location: { type: String, required: true },
-    totalSeats: { type: Number, required: true },
-    availableSeats: { type: Number, required: true },
-    date: { type: Date, required: true },
-    price: { type: Number, required: true },
-    imageUrls: { type: [String], required: true },
-    createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+const EventSchema = new mongoose.Schema({
+  title: {
+    type: String,
+    required: true,
+    trim: true,
+    index: true
   },
-  { timestamps: true }
-);
+  description: {
+    type: String,
+    required: true,
+  },
+  category: {
+    type: String,
+    required: true,
+    index: true
+  },
+  tags: [{
+    type: String,
+    index: true
+  }],
+  location: {
+    type: String,
+    required: true,
+    index: true
+  },
+  date: {
+    type: Date,
+    required: true,
+  },
+  time: {
+    type: String,
+    required: true,
+  },
+  totalSeats: {
+    type: Number,
+    required: true,
+  },
+  availableSeats: {
+    type: Number,
+    required: true,
+  },
+  price: {
+    type: Number,
+    required: true,
+  },
+  image: {
+    type: String,
+    default: ''
+  },
+  organizer: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  }
+}, {
+  timestamps: true
+});
 
-export const Event = models.Event || model<IEvent>("Event", EventSchema);
-export default Event;
+// Create text index for search
+EventSchema.index({
+  title: 'text',
+  description: 'text',
+  category: 'text',
+  tags: 'text',
+  location: 'text'
+});
+
+export const Event = mongoose.models.Event || mongoose.model('Event', EventSchema);

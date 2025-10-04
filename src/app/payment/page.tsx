@@ -26,6 +26,7 @@ export default function PaymentPage() {
   
   const razorpayInstance = useRef<any>(null);
   const paymentInitiated = useRef(false);
+  const paymentCompleted = useRef(false);
 
   // Redirect if required parameters are missing
   useEffect(() => {
@@ -77,18 +78,25 @@ export default function PaymentPage() {
   }, []);
 
   const redirectToFailure = (reason: string) => {
+    if (paymentCompleted.current) return; // Prevent multiple redirects
+    
     console.log('Redirecting to failure page with reason:', reason);
+    paymentCompleted.current = true;
     router.push(`/payment/status?status=failed&reason=${encodeURIComponent(reason)}`);
   };
 
   const redirectToSuccess = () => {
+    if (paymentCompleted.current) return;
+    
     console.log('Redirecting to success page');
+    paymentCompleted.current = true;
     router.push('/payment/status?status=success');
   };
 
   const handlePaymentSuccess = async (paymentResponse: any) => {
     try {
       console.log('Payment success received:', paymentResponse);
+      paymentCompleted.current = true;
 
       // Verify payment signature
       const verificationResult = await verifyPaymentSignature({
@@ -121,6 +129,8 @@ export default function PaymentPage() {
     } catch (error) {
       console.error('Error processing payment success:', error);
       redirectToFailure('processing_error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -132,6 +142,7 @@ export default function PaymentPage() {
 
     setIsLoading(true);
     paymentInitiated.current = true;
+    paymentCompleted.current = false;
 
     try {
       // Create Razorpay order
@@ -171,41 +182,56 @@ export default function PaymentPage() {
         modal: {
           ondismiss: () => {
             console.log('Payment modal dismissed by user');
-            if (paymentInitiated.current) {
+            if (!paymentCompleted.current && paymentInitiated.current) {
+              console.log('Triggering failure redirect from ondismiss');
               redirectToFailure('payment_cancelled');
             }
             setIsLoading(false);
           },
-          escape: false, // Prevent closing with escape key
-          backdropclose: false, // Prevent closing by clicking outside
+          escape: true, // Allow escape key to close
+          backdropclose: true, // Allow clicking outside to close
         },
       };
 
       const razorpay = new window.Razorpay(options);
       razorpayInstance.current = razorpay;
       
-      // Add payment failed handler - MUST be before opening
+      // Add payment failed handler
       razorpay.on('payment.failed', (response: any) => {
         console.log('Payment failed event triggered:', response);
         let reason = 'payment_failed';
         if (response.error && response.error.description) {
           reason = response.error.description;
+        } else if (response.error && response.error.reason) {
+          reason = response.error.reason;
         }
         redirectToFailure(reason);
+        setIsLoading(false);
       });
 
       // Add close event listener as backup
       razorpay.on('close', () => {
         console.log('Razorpay close event triggered');
-        if (paymentInitiated.current) {
-          setTimeout(() => {
+        // Small delay to ensure other events are processed first
+        setTimeout(() => {
+          if (!paymentCompleted.current && paymentInitiated.current) {
+            console.log('Triggering failure redirect from close event');
             redirectToFailure('payment_cancelled');
-          }, 1000);
-        }
+            setIsLoading(false);
+          }
+        }, 500);
       });
 
       console.log('Opening Razorpay checkout...');
       razorpay.open();
+      
+      // Backup timeout for cases where Razorpay doesn't trigger events
+      setTimeout(() => {
+        if (!paymentCompleted.current && paymentInitiated.current) {
+          console.log('Backup timeout - checking payment status');
+          // This is a fallback, in real implementation you might want to check payment status via API
+        }
+      }, 300000); // 5 minutes timeout
       
     } catch (error) {
       console.error('Error initiating payment:', error);
@@ -222,6 +248,8 @@ export default function PaymentPage() {
       return;
     }
 
+    if (isLoading) return;
+
     await initiateRazorpayPayment();
   };
 
@@ -230,6 +258,7 @@ export default function PaymentPage() {
     if (!paymentInitiated.current) {
       router.push('/events');
     }
+    // If payment was initiated but not completed, let the Razorpay handlers handle the redirect
   };
 
   const handleRetryLoad = () => {
