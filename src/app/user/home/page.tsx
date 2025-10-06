@@ -1,3 +1,6 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 import { redirect } from 'next/navigation';
 import { getEvents } from '@/actions/eventActions';
 import { getToken } from '@/actions/authActions';
@@ -5,6 +8,7 @@ import { getCurrentUser } from '@/lib/auth';
 import EventCard from '@/components/ui/EventCard';
 import SearchBar from '@/components/shared/SearchBar';
 import { searchEvents, getEventsByCategory } from '@/actions/userActions';
+import { getCategories } from '@/actions/categoryActions';
 
 interface PageProps {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
@@ -20,6 +24,18 @@ export default async function UserHomePage({ searchParams }: PageProps) {
   if (!userDoc) {
     redirect('/auth/login');
   }
+
+  // Fetch dynamic categories
+  const categoriesResult = await getCategories();
+  const CATEGORIES = categoriesResult.success && categoriesResult.categories ? 
+    categoriesResult.categories.map(cat => ({
+      value: cat.name,
+      label: cat.name,
+      icon: cat.icon,
+      color: 'bg-blue-100', // Default colors
+      textColor: 'text-blue-600',
+      description: cat.description
+    })) : [];
 
   // Await the searchParams promise
   const params = await searchParams;
@@ -51,96 +67,64 @@ export default async function UserHomePage({ searchParams }: PageProps) {
   const upcomingEvents = events.filter((event: any) => {
     const eventDate = new Date(event.date);
     const today = new Date();
+    today.setHours(0, 0, 0, 0); // Reset time to start of day
     return eventDate >= today;
   });
 
-  // Categorize events
-  const musicEvents = upcomingEvents.filter((event: any) => 
-    event.title.toLowerCase().includes('music') || 
-    event.title.toLowerCase().includes('concert') ||
-    event.title.toLowerCase().includes('festival') ||
-    event.description.toLowerCase().includes('music') ||
-    event.description.toLowerCase().includes('concert')
-  );
+  // Group events by actual category from the database
+  const eventsByCategory: { [key: string]: any[] } = {};
+  
+  // Initialize all categories
+  CATEGORIES.forEach(cat => {
+    eventsByCategory[cat.value] = [];
+  });
 
-  const artEvents = upcomingEvents.filter((event: any) => 
-    event.title.toLowerCase().includes('art') || 
-    event.title.toLowerCase().includes('exhibition') ||
-    event.title.toLowerCase().includes('gallery') ||
-    event.description.toLowerCase().includes('art') ||
-    event.description.toLowerCase().includes('painting') ||
-    event.description.toLowerCase().includes('sculpture')
-  );
-
-  const techEvents = upcomingEvents.filter((event: any) => 
-    event.title.toLowerCase().includes('tech') || 
-    event.title.toLowerCase().includes('technology') ||
-    event.title.toLowerCase().includes('conference') ||
-    event.title.toLowerCase().includes('workshop') ||
-    event.title.toLowerCase().includes('ai') ||
-    event.title.toLowerCase().includes('programming') ||
-    event.description.toLowerCase().includes('technology') ||
-    event.description.toLowerCase().includes('programming') ||
-    event.description.toLowerCase().includes('coding') ||
-    event.description.toLowerCase().includes('software')
-  );
-
-  const sportsEvents = upcomingEvents.filter((event: any) => 
-    event.title.toLowerCase().includes('sports') || 
-    event.title.toLowerCase().includes('game') ||
-    event.title.toLowerCase().includes('tournament') ||
-    event.description.toLowerCase().includes('sports') ||
-    event.description.toLowerCase().includes('competition') ||
-    event.description.toLowerCase().includes('match')
-  );
-
-  const foodEvents = upcomingEvents.filter((event: any) => 
-    event.title.toLowerCase().includes('food') || 
-    event.title.toLowerCase().includes('culinary') ||
-    event.title.toLowerCase().includes('festival') ||
-    event.description.toLowerCase().includes('food') ||
-    event.description.toLowerCase().includes('cuisine') ||
-    event.description.toLowerCase().includes('cooking')
-  );
-
-  // All categories for display (REMOVED BUSINESS)
-  const categories = [
-    {
-      name: "Music",
-      count: musicEvents.length,
-      icon: "🎵",
-      color: "bg-blue-100",
-      textColor: "text-blue-600"
-    },
-    {
-      name: "Art",
-      count: artEvents.length,
-      icon: "🎨",
-      color: "bg-purple-100",
-      textColor: "text-purple-600"
-    },
-    {
-      name: "Technology",
-      count: techEvents.length,
-      icon: "💻",
-      color: "bg-green-100",
-      textColor: "text-green-600"
-    },
-    {
-      name: "Sports",
-      count: sportsEvents.length,
-      icon: "⚽",
-      color: "bg-red-100",
-      textColor: "text-red-600"
-    },
-    {
-      name: "Food",
-      count: foodEvents.length,
-      icon: "🍕",
-      color: "bg-yellow-100",
-      textColor: "text-yellow-600"
+  // Also initialize for any categories that exist in events but not in CATEGORIES
+  upcomingEvents.forEach(event => {
+    const eventCategory = event.category;
+    if (eventCategory && !eventsByCategory[eventCategory]) {
+      eventsByCategory[eventCategory] = [];
     }
-  ];
+  });
+
+  // Populate events by their actual category
+  upcomingEvents.forEach(event => {
+    const eventCategory = event.category;
+    if (eventCategory && eventsByCategory[eventCategory]) {
+      eventsByCategory[eventCategory].push(event);
+    } else if (CATEGORIES.length > 0) {
+      // If category doesn't exist or event has no category, put it in first available category
+      eventsByCategory[CATEGORIES[0].value].push(event);
+    }
+  });
+
+  // Get category display info with counts
+  const categoriesWithCounts = CATEGORIES.map(category => ({
+    ...category,
+    count: eventsByCategory[category.value]?.length || 0
+  })).filter(category => category.count > 0); // Only show categories that have events
+
+  // Also include categories from events that might not be in the categories list
+  Object.keys(eventsByCategory).forEach(categoryName => {
+    if (!CATEGORIES.find(cat => cat.value === categoryName) && eventsByCategory[categoryName].length > 0) {
+      categoriesWithCounts.push({
+        value: categoryName,
+        label: categoryName,
+        icon: '🎯',
+        color: 'bg-gray-100',
+        textColor: 'text-gray-600',
+        description: `Events in ${categoryName} category`,
+        count: eventsByCategory[categoryName].length
+      });
+    }
+  });
+
+  // Helper function to get category info
+  const getCategoryInfo = (categoryValue: string) => {
+    return CATEGORIES.find(cat => cat.value === categoryValue) || 
+           categoriesWithCounts.find(cat => cat.value === categoryValue) || 
+           { value: 'other', label: 'Other', icon: '🎯', color: 'bg-gray-100', textColor: 'text-gray-600', description: 'Various events' };
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
@@ -173,7 +157,7 @@ export default async function UserHomePage({ searchParams }: PageProps) {
               <p className="text-gray-600">
                 {searchQuery && `for "${searchQuery}"`}
                 {searchQuery && category && ' in '}
-                {category && `category: ${category}`}
+                {category && `category: ${getCategoryInfo(category)?.label}`}
               </p>
             )}
           </div>
@@ -186,160 +170,82 @@ export default async function UserHomePage({ searchParams }: PageProps) {
             <p className="text-gray-600">Find events that match your interests</p>
           </div>
           
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            {categories.map((category) => (
-              <div
-                key={category.name}
-                className="bg-white rounded-xl p-4 text-center shadow-md hover:shadow-lg transition-shadow cursor-pointer border border-gray-100"
+          {categoriesWithCounts.length > 0 ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              {/* All Events Card */}
+              <a
+                href="/user/home"
+                className="bg-white rounded-xl p-4 text-center shadow-md hover:shadow-lg transition-shadow cursor-pointer border border-gray-100 block no-underline"
               >
-                <div className={`w-12 h-12 ${category.color} rounded-full flex items-center justify-center mx-auto mb-3`}>
-                  <span className="text-2xl">{category.icon}</span>
+                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <span className="text-2xl">📅</span>
                 </div>
-                <h3 className="font-semibold text-gray-800 mb-1">{category.name}</h3>
-                <p className={`text-sm font-medium ${category.textColor}`}>
-                  {category.count} event{category.count !== 1 ? 's' : ''}
+                <h3 className="font-semibold text-gray-800 mb-1">All Events</h3>
+                <p className="text-sm font-medium text-blue-600">
+                  {upcomingEvents.length} event{upcomingEvents.length !== 1 ? 's' : ''}
                 </p>
-              </div>
-            ))}
-          </div>
+              </a>
+
+              {/* Category Cards */}
+              {categoriesWithCounts.map((category) => (
+                <a
+                  key={category.value}
+                  href={`/user/home?category=${encodeURIComponent(category.value)}`}
+                  className="bg-white rounded-xl p-4 text-center shadow-md hover:shadow-lg transition-shadow cursor-pointer border border-gray-100 block no-underline"
+                >
+                  <div className={`w-12 h-12 ${category.color} rounded-full flex items-center justify-center mx-auto mb-3`}>
+                    <span className="text-2xl">{category.icon}</span>
+                  </div>
+                  <h3 className="font-semibold text-gray-800 mb-1">{category.label}</h3>
+                  <p className={`text-sm font-medium ${category.textColor}`}>
+                    {category.count} event{category.count !== 1 ? 's' : ''}
+                  </p>
+                </a>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <p className="text-gray-600">No categories with events available yet.</p>
+            </div>
+          )}
         </section>
 
         {/* Featured Events by Category */}
         <div className="space-y-16 mb-16">
-          {/* Music Concerts Section */}
-          {musicEvents.length > 0 && (
-            <section>
-              <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center space-x-3">
-                  <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                    <span className="text-2xl">🎵</span>
+          {/* Show events for each category that has events */}
+          {categoriesWithCounts
+            .filter(category => category.count > 0)
+            .map(category => (
+              <section key={category.value}>
+                <div className="flex items-center justify-between mb-8">
+                  <div className="flex items-center space-x-3">
+                    <div className={`w-12 h-12 ${category.color} rounded-xl flex items-center justify-center`}>
+                      <span className="text-2xl">{category.icon}</span>
+                    </div>
+                    <div>
+                      <h2 className="text-3xl font-bold text-gray-800">{category.label}</h2>
+                      <p className="text-gray-600">
+                        {category.description || getCategoryDescription(category.value)}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="text-3xl font-bold text-gray-800">Music Concerts</h2>
-                    <p className="text-gray-600">Experience live performances</p>
-                  </div>
+                  {category.count > 3 && (
+                    <a 
+                      href={`/user/home?category=${encodeURIComponent(category.value)}`}
+                      className="text-blue-600 hover:text-blue-800 font-semibold"
+                    >
+                      View All ({category.count})
+                    </a>
+                  )}
                 </div>
-                {musicEvents.length > 3 && (
-                  <a href="#all-events" className="text-blue-600 hover:text-blue-800 font-semibold">
-                    View All ({musicEvents.length})
-                  </a>
-                )}
-              </div>
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {musicEvents.slice(0, 3).map((event: any) => (
-                  <EventCard key={event._id.toString()} event={event} />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Art Exhibitions Section */}
-          {artEvents.length > 0 && (
-            <section>
-              <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center space-x-3">
-                  <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                    <span className="text-2xl">🎨</span>
-                  </div>
-                  <div>
-                    <h2 className="text-3xl font-bold text-gray-800">Art Exhibitions</h2>
-                    <p className="text-gray-600">Explore creative masterpieces</p>
-                  </div>
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                  {eventsByCategory[category.value].slice(0, 3).map((event: any) => (
+                    <EventCard key={event._id.toString()} event={event} />
+                  ))}
                 </div>
-                {artEvents.length > 3 && (
-                  <a href="#all-events" className="text-blue-600 hover:text-blue-800 font-semibold">
-                    View All ({artEvents.length})
-                  </a>
-                )}
-              </div>
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {artEvents.slice(0, 3).map((event: any) => (
-                  <EventCard key={event._id.toString()} event={event} />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Tech Conferences Section */}
-          {techEvents.length > 0 && (
-            <section>
-              <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center space-x-3">
-                  <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
-                    <span className="text-2xl">💻</span>
-                  </div>
-                  <div>
-                    <h2 className="text-3xl font-bold text-gray-800">Tech Conferences</h2>
-                    <p className="text-gray-600">Learn from industry experts</p>
-                  </div>
-                </div>
-                {techEvents.length > 3 && (
-                  <a href="#all-events" className="text-blue-600 hover:text-blue-800 font-semibold">
-                    View All ({techEvents.length})
-                  </a>
-                )}
-              </div>
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {techEvents.slice(0, 3).map((event: any) => (
-                  <EventCard key={event._id.toString()} event={event} />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Sports Events Section */}
-          {sportsEvents.length > 0 && (
-            <section>
-              <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center space-x-3">
-                  <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
-                    <span className="text-2xl">⚽</span>
-                  </div>
-                  <div>
-                    <h2 className="text-3xl font-bold text-gray-800">Sports Events</h2>
-                    <p className="text-gray-600">Cheer for your favorite teams</p>
-                  </div>
-                </div>
-                {sportsEvents.length > 3 && (
-                  <a href="#all-events" className="text-blue-600 hover:text-blue-800 font-semibold">
-                    View All ({sportsEvents.length})
-                  </a>
-                )}
-              </div>
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {sportsEvents.slice(0, 3).map((event: any) => (
-                  <EventCard key={event._id.toString()} event={event} />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Food Events Section */}
-          {foodEvents.length > 0 && (
-            <section>
-              <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center space-x-3">
-                  <div className="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center">
-                    <span className="text-2xl">🍕</span>
-                  </div>
-                  <div>
-                    <h2 className="text-3xl font-bold text-gray-800">Food Festivals</h2>
-                    <p className="text-gray-600">Taste delicious cuisines</p>
-                  </div>
-                </div>
-                {foodEvents.length > 3 && (
-                  <a href="#all-events" className="text-blue-600 hover:text-blue-800 font-semibold">
-                    View All ({foodEvents.length})
-                  </a>
-                )}
-              </div>
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {foodEvents.slice(0, 3).map((event: any) => (
-                  <EventCard key={event._id.toString()} event={event} />
-                ))}
-              </div>
-            </section>
-          )}
+              </section>
+            ))
+          }
         </div>
 
         {/* All Events Section */}
@@ -382,4 +288,20 @@ export default async function UserHomePage({ searchParams }: PageProps) {
       </div>
     </div>
   );
+}
+
+// Helper function for category descriptions
+function getCategoryDescription(category: string): string {
+  const descriptions: { [key: string]: string } = {
+    music: 'Experience live performances and concerts',
+    sports: 'Cheer for your favorite teams and athletes',
+    arts: 'Explore creative masterpieces and exhibitions',
+    business: 'Network and learn from industry leaders',
+    technology: 'Stay updated with the latest tech trends',
+    food: 'Taste delicious cuisines and culinary delights',
+    health: 'Focus on wellness and healthy living',
+    education: 'Learn and grow with educational events',
+    other: 'Discover various interesting events'
+  };
+  return descriptions[category.toLowerCase()] || `Explore ${category} events`;
 }

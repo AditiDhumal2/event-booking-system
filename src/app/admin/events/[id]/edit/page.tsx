@@ -3,6 +3,16 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getEventById, updateEvent } from '@/actions/eventActions';
+import { getCategories } from '@/actions/categoryActions';
+
+interface Category {
+  _id: string;
+  name: string;
+  description: string;
+  color: string;
+  icon: string;
+  isActive: boolean;
+}
 
 interface PageProps {
   params: Promise<{
@@ -16,8 +26,10 @@ interface EventData {
   description: string;
   location: string;
   date: string;
+  time: string;
   price: number;
   totalSeats: number;
+  category: string;
   imageUrls: string[];
 }
 
@@ -33,11 +45,15 @@ export default function EditEventPage({ params }: PageProps) {
     description: '',
     location: '',
     date: '',
+    time: '',
     price: 0,
     totalSeats: 0,
+    category: '',
     imageUrls: []
   });
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
 
   // Unwrap the params promise
   useEffect(() => {
@@ -47,6 +63,24 @@ export default function EditEventPage({ params }: PageProps) {
     }
     unwrapParams();
   }, [params]);
+
+  // Load categories on component mount
+  useEffect(() => {
+    async function loadCategories() {
+      try {
+        const result = await getCategories();
+        if (result.success && result.categories) {
+          setCategories(result.categories);
+        }
+      } catch (error) {
+        console.error('Error loading categories:', error);
+      } finally {
+        setCategoriesLoading(false);
+      }
+    }
+
+    loadCategories();
+  }, []);
 
   // Fetch event data after params are unwrapped
   useEffect(() => {
@@ -66,8 +100,10 @@ export default function EditEventPage({ params }: PageProps) {
             description: result.event.description,
             location: result.event.location,
             date: formattedDate,
+            time: result.event.time,
             price: result.event.price,
             totalSeats: result.event.totalSeats,
+            category: result.event.category || '',
             imageUrls: result.event.imageUrls || []
           });
         } else {
@@ -84,7 +120,7 @@ export default function EditEventPage({ params }: PageProps) {
     fetchEvent();
   }, [unwrappedParams]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
@@ -121,8 +157,12 @@ export default function EditEventPage({ params }: PageProps) {
       formDataToSend.append('description', formData.description);
       formDataToSend.append('location', formData.location);
       formDataToSend.append('date', formData.date);
+      formDataToSend.append('time', formData.time);
       formDataToSend.append('price', formData.price.toString());
       formDataToSend.append('totalSeats', formData.totalSeats.toString());
+      formDataToSend.append('category', formData.category);
+
+      console.log('🔄 Sending update with category:', formData.category);
 
       // Append existing image URLs
       formData.imageUrls.forEach(url => {
@@ -136,6 +176,8 @@ export default function EditEventPage({ params }: PageProps) {
 
       const result = await updateEvent(unwrappedParams.id, formDataToSend);
       
+      console.log('📩 Update response:', result);
+      
       if (result.success) {
         setMessage('Event updated successfully!');
         // Redirect to events list after a short delay
@@ -146,8 +188,8 @@ export default function EditEventPage({ params }: PageProps) {
         setMessage(result.error || 'Failed to update event');
       }
     } catch (error) {
-      setMessage('Failed to update event');
       console.error('Error updating event:', error);
+      setMessage('Failed to update event');
     } finally {
       setIsSubmitting(false);
     }
@@ -198,6 +240,38 @@ export default function EditEventPage({ params }: PageProps) {
             />
           </div>
           
+          {/* Dynamic Category Field */}
+          <div>
+            <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
+              Category *
+            </label>
+            {categoriesLoading ? (
+              <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 animate-pulse">
+                Loading categories...
+              </div>
+            ) : categories.length > 0 ? (
+              <select 
+                id="category"
+                name="category" 
+                value={formData.category}
+                onChange={handleInputChange}
+                required 
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select a category</option>
+                {categories.map(category => (
+                  <option key={category._id} value={category.name}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="text-red-600 text-sm">
+                No categories available. Please create categories first.
+              </div>
+            )}
+          </div>
+          
           <div>
             <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
               Description *
@@ -214,19 +288,36 @@ export default function EditEventPage({ params }: PageProps) {
             />
           </div>
           
-          <div>
-            <label htmlFor="date" className="block text-sm font-medium text-gray-700 mb-1">
-              Date *
-            </label>
-            <input 
-              id="date"
-              type="date" 
-              name="date" 
-              value={formData.date}
-              onChange={handleInputChange}
-              required 
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="date" className="block text-sm font-medium text-gray-700 mb-1">
+                Date *
+              </label>
+              <input 
+                id="date"
+                type="date" 
+                name="date" 
+                value={formData.date}
+                onChange={handleInputChange}
+                required 
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            
+            <div>
+              <label htmlFor="time" className="block text-sm font-medium text-gray-700 mb-1">
+                Time *
+              </label>
+              <input 
+                id="time"
+                type="time" 
+                name="time" 
+                value={formData.time}
+                onChange={handleInputChange}
+                required 
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
           </div>
           
           <div>
@@ -374,7 +465,7 @@ export default function EditEventPage({ params }: PageProps) {
             </button>
             <button 
               type="submit" 
-              disabled={isSubmitting}
+              disabled={isSubmitting || categories.length === 0}
               className={`px-6 py-2 rounded-md text-white font-medium ${
                 isSubmitting ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
               } transition-colors`}

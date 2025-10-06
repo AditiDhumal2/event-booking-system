@@ -3,7 +3,6 @@
 import { revalidatePath } from 'next/cache';
 import dbConnect from '@/lib/mongoose';
 import { requireAuth } from '@/lib/auth';
-import type { IEvent } from '@/models/Event';
 import { Types } from 'mongoose';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
@@ -15,9 +14,11 @@ interface EventPlain {
   description: string;
   location: string;
   date: string;
+  time: string;
   price: number;
   totalSeats: number;
   availableSeats: number;
+  category: string;
   imageUrls: string[];
   createdBy: {
     _id: string;
@@ -89,10 +90,12 @@ function convertAggregationEventToPlain(event: any): EventPlain {
     description: event.description || '',
     location: event.location || '',
     date: safeToISOString(event.date),
+    time: event.time || '',
     price: event.price || 0,
     totalSeats: event.totalSeats || 0,
     availableSeats: event.availableSeats || 0,
-    imageUrls: event.imageUrls || [], // Only use uploaded images, no fallback
+    category: event.category || 'other',
+    imageUrls: event.imageUrls || [],
     createdBy: {
       _id: event.createdBy?._id?.toString() || '',
       name: event.createdBy?.name || 'Unknown',
@@ -103,8 +106,9 @@ function convertAggregationEventToPlain(event: any): EventPlain {
   };
 }
 
-// Type assertion helper for IEvent documents
-function assertEventDocument(doc: any): asserts doc is IEvent & {
+// Type assertion helper for Event documents
+function assertEventDocument(doc: any): asserts doc is {
+  _id: any;
   totalSeats: number;
   availableSeats: number;
   save: () => Promise<any>;
@@ -171,15 +175,19 @@ export async function createEvent(formData: FormData) {
   const description = formData.get('description') as string;
   const location = formData.get('location') as string;
   const date = formData.get('date') as string;
+  const time = formData.get('time') as string;
   const price = parseFloat(formData.get('price') as string);
   const totalSeats = parseInt(formData.get('totalSeats') as string);
+  const category = formData.get('category') as string;
   
   console.log('📝 Creating event with data:', {
     title,
     location,
     date,
+    time,
     price,
-    totalSeats
+    totalSeats,
+    category
   });
   
   try {
@@ -215,11 +223,13 @@ export async function createEvent(formData: FormData) {
       description,
       location,
       date: new Date(date),
+      time,
       price,
       totalSeats,
       availableSeats: totalSeats,
-      imageUrls, // Store only uploaded images
-      createdBy: user._id
+      category,
+      imageUrls,
+      organizer: user._id
     });
     
     await event.save();
@@ -246,19 +256,39 @@ export async function updateEvent(eventId: string, formData: FormData) {
   const description = formData.get('description') as string;
   const location = formData.get('location') as string;
   const date = formData.get('date') as string;
+  const time = formData.get('time') as string;
   const price = parseFloat(formData.get('price') as string);
   const totalSeats = parseInt(formData.get('totalSeats') as string);
+  const category = formData.get('category') as string;
   
   console.log('📝 Updating event:', eventId);
+  console.log('🔄 New category:', category);
+  console.log('📊 Form data received:', {
+    title,
+    category,
+    location,
+    date,
+    time,
+    price,
+    totalSeats
+  });
   
   try {
-    const event = await Event.findById(eventId);
-    if (!event) {
+    // First, let's check what the current event looks like
+    const currentEvent = await Event.findById(eventId);
+    console.log('📋 Current event before update:', {
+      id: currentEvent?._id,
+      currentCategory: currentEvent?.category,
+      currentTitle: currentEvent?.title
+    });
+    
+    if (!currentEvent) {
+      console.log('❌ Event not found:', eventId);
       return { success: false, error: 'Event not found' };
     }
     
     // Use type assertion to tell TypeScript about the document properties
-    assertEventDocument(event);
+    assertEventDocument(currentEvent);
     
     // Handle existing images
     const existingImages = formData.getAll('existingImages') as string[];
@@ -290,38 +320,67 @@ export async function updateEvent(eventId: string, formData: FormData) {
 
     // If no images remain, return error
     if (imageUrls.length === 0) {
+      console.log('❌ No images found after update');
       return { success: false, error: 'At least one image is required' };
     }
     
     // Calculate new available seats if total seats changed
-    const seatsDifference = totalSeats - event.totalSeats;
-    const newAvailableSeats = event.availableSeats + seatsDifference;
+    const seatsDifference = totalSeats - currentEvent.totalSeats;
+    const newAvailableSeats = currentEvent.availableSeats + seatsDifference;
+    
+    console.log('💺 Seat calculation:', {
+      oldTotal: currentEvent.totalSeats,
+      newTotal: totalSeats,
+      oldAvailable: currentEvent.availableSeats,
+      newAvailable: newAvailableSeats
+    });
+    
+    const updateData = {
+      title,
+      description,
+      location,
+      date: new Date(date),
+      time,
+      price,
+      totalSeats,
+      category, // Make sure this is included
+      availableSeats: newAvailableSeats > 0 ? newAvailableSeats : 0,
+      imageUrls
+    };
+    
+    console.log('🔄 Update data being sent:', updateData);
     
     const updatedEvent = await Event.findByIdAndUpdate(
       eventId,
-      {
-        title,
-        description,
-        location,
-        date: new Date(date),
-        price,
-        totalSeats,
-        availableSeats: newAvailableSeats > 0 ? newAvailableSeats : 0,
-        imageUrls // Store only uploaded images
-      },
-      { new: true }
+      updateData,
+      { new: true, runValidators: true } // Added runValidators to ensure category validation
     );
     
     if (!updatedEvent) {
+      console.log('❌ Event not found after update attempt');
       return { success: false, error: 'Event not found' };
     }
     
+    console.log('✅ Event updated successfully:', {
+      id: updatedEvent._id,
+      newCategory: updatedEvent.category,
+      newTitle: updatedEvent.title
+    });
+    
+    // Let's verify the update by fetching the event again
+    const verifiedEvent = await Event.findById(eventId);
+    console.log('🔍 Verified event after update:', {
+      id: verifiedEvent?._id,
+      verifiedCategory: verifiedEvent?.category,
+      verifiedTitle: verifiedEvent?.title
+    });
+
     revalidatePath('/admin/events');
     revalidatePath(`/events/${eventId}`);
     revalidatePath('/user/home');
     revalidatePath('/');
     
-    console.log('✅ Event updated successfully');
+    console.log('🔄 Paths revalidated');
     
     // Convert to plain object
     const plainEvent = convertAggregationEventToPlain(updatedEvent);
@@ -362,7 +421,7 @@ export async function getEvents(filters = {}): Promise<{ success: boolean; event
       {
         $lookup: {
           from: 'users',
-          localField: 'createdBy',
+          localField: 'organizer',
           foreignField: '_id',
           as: 'creator'
         }
@@ -379,9 +438,11 @@ export async function getEvents(filters = {}): Promise<{ success: boolean; event
           description: 1,
           location: 1,
           date: 1,
+          time: 1,
           price: 1,
           totalSeats: 1,
           availableSeats: 1,
+          category: 1,
           imageUrls: 1,
           createdAt: 1,
           updatedAt: 1,
@@ -404,10 +465,12 @@ export async function getEvents(filters = {}): Promise<{ success: boolean; event
       description: event.description || '',
       location: event.location || '',
       date: safeToISOString(event.date),
+      time: event.time || '',
       price: event.price || 0,
       totalSeats: event.totalSeats || 0,
       availableSeats: event.availableSeats || 0,
-      imageUrls: event.imageUrls || [], // Only uploaded images, no fallback
+      category: event.category || 'other',
+      imageUrls: event.imageUrls || [],
       createdBy: {
         _id: event.createdBy?._id?.toString() || '',
         name: event.createdBy?.name || 'Unknown',
@@ -437,7 +500,7 @@ export async function getEventById(eventId: string): Promise<{ success: boolean;
       {
         $lookup: {
           from: 'users',
-          localField: 'createdBy',
+          localField: 'organizer',
           foreignField: '_id',
           as: 'creator'
         }
@@ -454,9 +517,11 @@ export async function getEventById(eventId: string): Promise<{ success: boolean;
           description: 1,
           location: 1,
           date: 1,
+          time: 1,
           price: 1,
           totalSeats: 1,
           availableSeats: 1,
+          category: 1,
           imageUrls: 1,
           createdAt: 1,
           updatedAt: 1,
@@ -481,10 +546,12 @@ export async function getEventById(eventId: string): Promise<{ success: boolean;
       description: event.description || '',
       location: event.location || '',
       date: safeToISOString(event.date),
+      time: event.time || '',
       price: event.price || 0,
       totalSeats: event.totalSeats || 0,
       availableSeats: event.availableSeats || 0,
-      imageUrls: event.imageUrls || [], // Only uploaded images, no fallback
+      category: event.category || 'other',
+      imageUrls: event.imageUrls || [],
       createdBy: {
         _id: event.createdBy?._id?.toString() || '',
         name: event.createdBy?.name || 'Unknown',
@@ -497,6 +564,7 @@ export async function getEventById(eventId: string): Promise<{ success: boolean;
     console.log('✅ Event fetched successfully:', {
       id: plainEvent._id,
       title: plainEvent.title,
+      category: plainEvent.category,
       imageCount: plainEvent.imageUrls.length
     });
     
@@ -521,7 +589,7 @@ export async function getFeaturedEvents(): Promise<{ success: boolean; events?: 
       {
         $lookup: {
           from: 'users',
-          localField: 'createdBy',
+          localField: 'organizer',
           foreignField: '_id',
           as: 'creator'
         }
@@ -538,9 +606,11 @@ export async function getFeaturedEvents(): Promise<{ success: boolean; events?: 
           description: 1,
           location: 1,
           date: 1,
+          time: 1,
           price: 1,
           totalSeats: 1,
           availableSeats: 1,
+          category: 1,
           imageUrls: 1,
           createdAt: 1,
           updatedAt: 1,
@@ -563,10 +633,12 @@ export async function getFeaturedEvents(): Promise<{ success: boolean; events?: 
       description: event.description || '',
       location: event.location || '',
       date: safeToISOString(event.date),
+      time: event.time || '',
       price: event.price || 0,
       totalSeats: event.totalSeats || 0,
       availableSeats: event.availableSeats || 0,
-      imageUrls: event.imageUrls || [], // Only uploaded images, no fallback
+      category: event.category || 'other',
+      imageUrls: event.imageUrls || [],
       createdBy: {
         _id: event.createdBy?._id?.toString() || '',
         name: event.createdBy?.name || 'Unknown',

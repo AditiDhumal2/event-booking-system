@@ -1,14 +1,47 @@
 'use client';
 
 import { createEvent } from '@/actions/eventActions';
-import { useState } from 'react';
+import { getCategories } from '@/actions/categoryActions';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+
+interface Category {
+  _id: string;
+  name: string;
+  description: string;
+  color: string;
+  icon: string;
+  isActive: boolean;
+}
 
 export default function NewEventPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
   const router = useRouter();
+
+  // Load categories on component mount
+  useEffect(() => {
+    async function loadCategories() {
+      try {
+        const result = await getCategories();
+        if (result.success && result.categories) {
+          setCategories(result.categories);
+        } else {
+          setMessage('Failed to load categories');
+        }
+      } catch (error) {
+        console.error('Error loading categories:', error);
+        setMessage('Error loading categories');
+      } finally {
+        setCategoriesLoading(false);
+      }
+    }
+
+    loadCategories();
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -24,7 +57,6 @@ export default function NewEventPage() {
     setMessage(null);
     
     try {
-      // Create a new FormData instance
       const submitData = new FormData();
       
       // Add all form fields
@@ -32,21 +64,22 @@ export default function NewEventPage() {
       submitData.append('description', formData.get('description') as string);
       submitData.append('location', formData.get('location') as string);
       submitData.append('date', formData.get('date') as string);
+      submitData.append('time', formData.get('time') as string);
       submitData.append('price', formData.get('price') as string);
       submitData.append('totalSeats', formData.get('totalSeats') as string);
+      submitData.append('category', formData.get('category') as string);
       
       // Append each selected file
       selectedFiles.forEach((file) => {
         submitData.append('images', file);
       });
 
-      console.log('Submitting form with files:', selectedFiles.length);
+      console.log('Submitting form with category:', formData.get('category'));
       
       const result = await createEvent(submitData);
       
       if (result.success) {
         setMessage('Event created successfully!');
-        // Redirect to events list after a short delay
         setTimeout(() => {
           router.push('/admin/events');
         }, 1500);
@@ -83,6 +116,36 @@ export default function NewEventPage() {
             />
           </div>
           
+          {/* Dynamic Category Field */}
+          <div>
+            <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
+              Category *
+            </label>
+            {categoriesLoading ? (
+              <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 animate-pulse">
+                Loading categories...
+              </div>
+            ) : categories.length > 0 ? (
+              <select 
+                id="category"
+                name="category" 
+                required 
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select a category</option>
+                {categories.map(category => (
+                  <option key={category._id} value={category.name}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="text-red-600 text-sm">
+                No categories available. Please create categories first.
+              </div>
+            )}
+          </div>
+          
           <div>
             <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
               Description *
@@ -97,17 +160,32 @@ export default function NewEventPage() {
             />
           </div>
           
-          <div>
-            <label htmlFor="date" className="block text-sm font-medium text-gray-700 mb-1">
-              Date *
-            </label>
-            <input 
-              id="date"
-              type="date" 
-              name="date" 
-              required 
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="date" className="block text-sm font-medium text-gray-700 mb-1">
+                Date *
+              </label>
+              <input 
+                id="date"
+                type="date" 
+                name="date" 
+                required 
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            
+            <div>
+              <label htmlFor="time" className="block text-sm font-medium text-gray-700 mb-1">
+                Time *
+              </label>
+              <input 
+                id="time"
+                type="time" 
+                name="time" 
+                required 
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
           </div>
           
           <div>
@@ -213,9 +291,9 @@ export default function NewEventPage() {
             </button>
             <button 
               type="submit" 
-              disabled={isLoading || selectedFiles.length === 0}
+              disabled={isLoading || selectedFiles.length === 0 || categories.length === 0}
               className={`px-6 py-2 rounded-md text-white font-medium ${
-                isLoading || selectedFiles.length === 0 
+                isLoading || selectedFiles.length === 0 || categories.length === 0
                   ? 'bg-blue-400 cursor-not-allowed' 
                   : 'bg-blue-600 hover:bg-blue-700'
               } transition-colors`}

@@ -182,29 +182,6 @@ export async function changePassword(prevState: any, formData: FormData) {
 
 // ===== SEARCH ACTIONS =====
 
-// Helper function to detect category from content
-function detectCategoryFromContent(title: string, description: string): string {
-  const content = (title + ' ' + description).toLowerCase();
-  
-  if (content.includes('music') || content.includes('concert') || content.includes('festival') || content.includes('band')) {
-    return 'Music';
-  }
-  if (content.includes('art') || content.includes('painting') || content.includes('exhibition') || content.includes('gallery') || content.includes('sculpture')) {
-    return 'Art';
-  }
-  if (content.includes('tech') || content.includes('technology') || content.includes('programming') || content.includes('coding') || content.includes('software') || content.includes('conference') || content.includes('workshop') || content.includes('ai') || content.includes('artificial intelligence') || content.includes('machine learning')) {
-    return 'Technology';
-  }
-  if (content.includes('sport') || content.includes('game') || content.includes('tournament') || content.includes('match') || content.includes('competition')) {
-    return 'Sports';
-  }
-  if (content.includes('food') || content.includes('culinary') || content.includes('cooking') || content.includes('cuisine') || content.includes('restaurant')) {
-    return 'Food';
-  }
-  
-  return 'General';
-}
-
 export async function searchEvents(query: string): Promise<{ 
   success: true; 
   events: EventType[]; 
@@ -231,15 +208,18 @@ export async function searchEvents(query: string): Promise<{
     } else {
       const searchLower = query.toLowerCase().trim();
       
-      // Use simple regex search that always works
-      const searchRegex = new RegExp(searchLower, 'i');
+      // Use exact word matching with word boundaries for better search
+      const searchRegex = new RegExp(`\\b${searchLower}\\b`, 'i');
+      
+      // Also create a partial match for category and tags
+      const partialRegex = new RegExp(searchLower, 'i');
       
       events = await Event.find({
         $or: [
           { title: searchRegex },
           { description: searchRegex },
-          { category: searchRegex },
-          { tags: searchRegex },
+          { category: partialRegex }, // Use partial match for category
+          { tags: partialRegex }, // Use partial match for tags
           { location: searchRegex }
         ],
         date: { $gte: new Date() }
@@ -249,6 +229,20 @@ export async function searchEvents(query: string): Promise<{
       .populate('organizer', 'name email');
       
       console.log('🔍 SEARCH: Found', events.length, 'events for query:', query);
+      
+      // Log what was found for debugging
+      events.forEach(event => {
+        console.log('📋 Event found:', {
+          title: event.title,
+          category: event.category,
+          matches: {
+            title: searchRegex.test(event.title),
+            description: searchRegex.test(event.description),
+            category: partialRegex.test(event.category),
+            location: searchRegex.test(event.location)
+          }
+        });
+      });
     }
 
     return {
@@ -256,15 +250,11 @@ export async function searchEvents(query: string): Promise<{
       events: events.map(event => {
         const eventObj = event.toObject();
         
-        // Auto-detect category if missing or wrong
-        const detectedCategory = detectCategoryFromContent(eventObj.title, eventObj.description);
-        const finalCategory = eventObj.category && eventObj.category !== 'General' ? eventObj.category : detectedCategory;
-        
         return {
           _id: eventObj._id.toString(),
           title: eventObj.title,
           description: eventObj.description,
-          category: finalCategory,
+          category: eventObj.category || 'other',
           tags: eventObj.tags || [],
           location: eventObj.location,
           totalSeats: eventObj.totalSeats,
@@ -300,38 +290,14 @@ export async function getEventsByCategory(category: string): Promise<{
 
     console.log('🔍 CATEGORY SEARCH: Searching for category:', category);
     
-    const categoryLower = category.toLowerCase().trim();
-    
-    // Get ALL upcoming events first
-    const allEvents = await Event.find({ 
-      date: { $gte: new Date() } 
+    // Search by exact category name match
+    const events = await Event.find({ 
+      category: category,
+      date: { $gte: new Date() }
     })
     .populate('organizer', 'name email')
+    .sort({ date: 1 })
     .limit(100);
-    
-    console.log('🔍 CATEGORY SEARCH: Total upcoming events:', allEvents.length);
-    
-    // Filter events by category - both explicit category and content-based detection
-    const events = allEvents.filter(event => {
-      const eventObj = event.toObject();
-      
-      // Check explicit category
-      const explicitMatch = eventObj.category?.toLowerCase().includes(categoryLower);
-      
-      // Check if content matches the category
-      const contentMatch = 
-        eventObj.title?.toLowerCase().includes(categoryLower) ||
-        eventObj.description?.toLowerCase().includes(categoryLower) ||
-        (eventObj.tags && eventObj.tags.some((tag: string) => 
-          tag.toLowerCase().includes(categoryLower)
-        ));
-      
-      // Auto-detect category from content
-      const detectedCategory = detectCategoryFromContent(eventObj.title, eventObj.description);
-      const detectionMatch = detectedCategory.toLowerCase().includes(categoryLower);
-      
-      return explicitMatch || contentMatch || detectionMatch;
-    });
     
     console.log('🔍 CATEGORY SEARCH: Found', events.length, 'events for category', category);
 
@@ -340,15 +306,11 @@ export async function getEventsByCategory(category: string): Promise<{
       events: events.map(event => {
         const eventObj = event.toObject();
         
-        // Auto-detect category if missing or wrong
-        const detectedCategory = detectCategoryFromContent(eventObj.title, eventObj.description);
-        const finalCategory = eventObj.category && eventObj.category !== 'General' ? eventObj.category : detectedCategory;
-        
         return {
           _id: eventObj._id.toString(),
           title: eventObj.title,
           description: eventObj.description,
-          category: finalCategory,
+          category: eventObj.category || 'other',
           tags: eventObj.tags || [],
           location: eventObj.location,
           totalSeats: eventObj.totalSeats,
@@ -444,14 +406,12 @@ export async function getAllEvents(): Promise<{ success: true; events: EventType
       success: true,
       events: events.map(e => {
         const eventObj = e.toObject();
-        const detectedCategory = detectCategoryFromContent(eventObj.title, eventObj.description);
-        const finalCategory = eventObj.category && eventObj.category !== 'General' ? eventObj.category : detectedCategory;
         
         return {
           _id: eventObj._id.toString(),
           title: eventObj.title,
           description: eventObj.description,
-          category: finalCategory,
+          category: eventObj.category || 'other',
           tags: eventObj.tags || [],
           location: eventObj.location,
           totalSeats: eventObj.totalSeats,

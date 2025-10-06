@@ -1,5 +1,23 @@
 import mongoose from 'mongoose';
 
+export interface IEvent extends mongoose.Document {
+  title: string;
+  description: string;
+  category: string; // Now this will reference category name
+  tags: string[];
+  location: string;
+  date: Date;
+  time: string;
+  totalSeats: number;
+  availableSeats: number;
+  price: number;
+  image: string;
+  imageUrls: string[];
+  organizer: mongoose.Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 const EventSchema = new mongoose.Schema({
   title: {
     type: String,
@@ -49,6 +67,10 @@ const EventSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  imageUrls: [{
+    type: String,
+    default: []
+  }],
   organizer: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -67,4 +89,4 @@ EventSchema.index({
   location: 'text'
 });
 
-export const Event = mongoose.models.Event || mongoose.model('Event', EventSchema);
+export const Event = mongoose.models.Event || mongoose.model<IEvent>('Event', EventSchema);

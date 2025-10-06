@@ -14,12 +14,12 @@ interface Event {
   totalSeats: number;
   availableSeats: number;
   date: string | Date;
-  imageUrls: string[];  // Keep this as required for your existing data
+  imageUrls: string[];
   price?: number;
   category?: string;
   tags?: string[];
   time?: string;
-  image?: string;        // Single image field from new model
+  image?: string;
   organizer?: {
     name: string;
     email: string;
@@ -54,17 +54,9 @@ export default function EventCard({ event }: EventCardProps) {
     checkBooking();
   }, [event._id]);
 
-  // Determine image source - FIXED VERSION
+  // Determine image source
   useEffect(() => {
-    // Debug log to see what image data we have
-    console.log('Event image data for:', event.title, {
-      imageUrls: event.imageUrls,
-      image: event.image,
-      hasImageUrls: event.imageUrls && event.imageUrls.length > 0,
-      hasSingleImage: !!event.image
-    });
-
-    // Priority 1: Use imageUrls array (your existing data structure)
+    // Priority 1: Use imageUrls array (existing data structure)
     if (event.imageUrls && Array.isArray(event.imageUrls) && event.imageUrls.length > 0) {
       const validUrl = event.imageUrls.find(url => url && url.trim() !== '');
       if (validUrl) {
@@ -103,9 +95,24 @@ export default function EventCard({ event }: EventCardProps) {
     setImageError(true);
   };
 
+  // Get category color
+  const getCategoryColor = (category: string) => {
+    const colors: { [key: string]: string } = {
+      'Music & Concerts': 'bg-blue-100 text-blue-800',
+      'Sports & Fitness': 'bg-red-100 text-red-800',
+      'Arts & Theater': 'bg-purple-100 text-purple-800',
+      'Business & Networking': 'bg-green-100 text-green-800',
+      'Technology': 'bg-indigo-100 text-indigo-800',
+      'Food & Drink': 'bg-yellow-100 text-yellow-800',
+      'Health & Wellness': 'bg-pink-100 text-pink-800',
+      'Education': 'bg-orange-100 text-orange-800',
+    };
+    return colors[category] || 'bg-gray-100 text-gray-800';
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-xl transition-shadow duration-300 flex flex-col h-full">
-      {/* Image Section - SIMPLIFIED */}
+      {/* Image Section */}
       <div className="relative w-full h-56 bg-gray-100">
         {currentImageUrl && !imageError ? (
           <>
@@ -128,7 +135,7 @@ export default function EventCard({ event }: EventCardProps) {
 
             {/* Category Badge */}
             {event.category && (
-              <div className="absolute top-3 right-3 bg-blue-600 text-white px-3 py-1 rounded-full text-xs font-semibold shadow-sm">
+              <div className={`absolute top-3 right-3 px-3 py-1 rounded-full text-xs font-semibold shadow-sm ${getCategoryColor(event.category)}`}>
                 {event.category}
               </div>
             )}

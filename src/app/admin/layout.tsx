@@ -29,6 +29,10 @@ export default function AdminLayout({ children }: Props) {
             href="/admin/events"
           />
           <AdminMenuOption
+            title="Categories"
+            href="/admin/categories"
+          />
+          <AdminMenuOption
             title="Users"
             href="/admin/users"
           />
