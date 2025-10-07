@@ -4,8 +4,7 @@ import { revalidatePath } from 'next/cache';
 import dbConnect from '@/lib/mongoose';
 import { requireAuth } from '@/lib/auth';
 import { Types } from 'mongoose';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
+import { uploadImage } from '@/lib/uploadImage';
 
 // Define interfaces for type safety
 interface EventPlain {
@@ -118,9 +117,11 @@ function assertEventDocument(doc: any): asserts doc is {
   }
 }
 
-// File upload helper function
-async function uploadImages(files: File[]): Promise<string[]> {
+// Cloudinary upload helper function for multiple files
+async function uploadImagesToCloudinary(files: File[]): Promise<string[]> {
   const imageUrls: string[] = [];
+  
+  console.log(`🖼️ Uploading ${files.length} images to Cloudinary`);
   
   for (const file of files) {
     try {
@@ -134,32 +135,13 @@ async function uploadImages(files: File[]): Promise<string[]> {
         throw new Error(`File ${file.name} is too large. Maximum size is 5MB`);
       }
       
-      // Convert file to buffer
-      const bytes = await file.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-      
-      // Create unique filename
-      const timestamp = Date.now();
-      const randomString = Math.random().toString(36).substring(2, 8);
-      const fileExtension = path.extname(file.name) || '.jpg';
-      const filename = `event-${timestamp}-${randomString}${fileExtension}`;
-      
-      // Ensure public/events directory exists
-      const eventsDir = path.join(process.cwd(), 'public', 'events');
-      await mkdir(eventsDir, { recursive: true });
-      
-      // Write file to public/events directory
-      const filePath = path.join(eventsDir, filename);
-      await writeFile(filePath, buffer);
-      
-      // The URL should be relative to the public folder
-      const imageUrl = `/events/${filename}`;
+      console.log(`📤 Uploading ${file.name} to Cloudinary...`);
+      const imageUrl = await uploadImage(file);
       imageUrls.push(imageUrl);
-      
-      console.log(`✅ Image saved: ${imageUrl}`);
+      console.log(`✅ Image uploaded successfully: ${imageUrl}`);
       
     } catch (error) {
-      console.error(`❌ Failed to upload ${file.name}:`, error);
+      console.error(`❌ Failed to upload ${file.name} to Cloudinary:`, error);
       throw error;
     }
   }
@@ -191,7 +173,7 @@ export async function createEvent(formData: FormData) {
   });
   
   try {
-    // Handle file uploads
+    // Handle file uploads to Cloudinary
     const imageFiles: File[] = [];
     
     // Get all files from FormData
@@ -214,8 +196,8 @@ export async function createEvent(formData: FormData) {
       return { success: false, error: 'At least one image is required' };
     }
     
-    console.log('🖼️ Processing', imageFiles.length, 'image files');
-    const imageUrls = await uploadImages(imageFiles);
+    console.log('🖼️ Processing', imageFiles.length, 'image files with Cloudinary');
+    const imageUrls = await uploadImagesToCloudinary(imageFiles);
     console.log('✅ Uploaded images URLs:', imageUrls);
     
     const event = new Event({
@@ -233,7 +215,7 @@ export async function createEvent(formData: FormData) {
     });
     
     await event.save();
-    console.log('💾 Event saved to database with images:', imageUrls);
+    console.log('💾 Event saved to database with Cloudinary images:', imageUrls);
     
     revalidatePath('/admin/events');
     revalidatePath('/user/home');
@@ -312,8 +294,8 @@ export async function updateEvent(eventId: string, formData: FormData) {
     }
     
     if (imageFiles.length > 0) {
-      console.log('🖼️ Processing', imageFiles.length, 'new image files');
-      const newImageUrls = await uploadImages(imageFiles);
+      console.log('🖼️ Processing', imageFiles.length, 'new image files with Cloudinary');
+      const newImageUrls = await uploadImagesToCloudinary(imageFiles);
       imageUrls = [...imageUrls, ...newImageUrls];
       console.log('✅ Updated images URLs:', imageUrls);
     }

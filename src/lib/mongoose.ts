@@ -1,9 +1,9 @@
 import mongoose from 'mongoose';
 
-const MONGODB_URI = process.env.MONGODB_URI!;
+const MONGODB_URI = 'mongodb+srv://aditidhumal08_db_user:mo5GbRhDpQKnbZ22@cluster0.rjxb5wr.mongodb.net/event-booking?retryWrites=true&w=majority&appName=Cluster0';
 
 if (!MONGODB_URI) {
-  throw new Error('Please define the MONGODB_URI environment variable inside .env.local');
+  throw new Error('Please define the MONGODB_URI');
 }
 
 interface MongooseCache {
@@ -24,7 +24,7 @@ if (!global.mongoose) {
   global.mongoose = cached;
 }
 
-async function dbConnect() {
+async function dbConnect(): Promise<typeof mongoose> {
   if (cached.conn) {
     return cached.conn;
   }
@@ -34,9 +34,7 @@ async function dbConnect() {
       bufferCommands: false,
     };
 
-    cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
-      return mongoose;
-    });
+    cached.promise = mongoose.connect(MONGODB_URI, opts);
   }
 
   try {
