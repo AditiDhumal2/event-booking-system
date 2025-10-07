@@ -1,4 +1,11 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Event Booking System
+
+A modern event booking system built with Next.js, featuring seamless event discovery and registration.
+
+## Live Demo
+
+The application is deployed on Vercel and available at:  
+**https://event-booking-system-black.vercel.app/**
 
 ## Getting Started
 
@@ -12,25 +19,36 @@ yarn dev
 pnpm dev
 # or
 bun dev
-```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000 with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+You can start editing the page by modifying app/page.tsx. The page auto-updates as you edit the file.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Project Overview
+This project is a full-stack event booking system that allows users to:
 
-## Learn More
+Browse available events
 
-To learn more about Next.js, take a look at the following resources:
+View event details
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Register for events
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Manage bookings
 
-## Deploy on Vercel
+Tech Stack
+Framework: Next.js
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Styling: Modern CSS/Tailwind (based on the clean design)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Deployment: Vercel
+
+Font: Geist - optimized with next/font
+
+Features
+Responsive design
+
+Fast performance with Next.js optimization
+
+Modern UI components
+
+Seamless deployment integration
